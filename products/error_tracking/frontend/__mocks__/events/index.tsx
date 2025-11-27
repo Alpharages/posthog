@@ -6,6 +6,9 @@ import { ErrorEventProperties } from 'lib/components/Errors/types'
 
 import { exceptionCardLogic } from '../../components/ExceptionCard/exceptionCardLogic'
 import javascript_empty from './javascript_empty.json'
+import javascript_minified_react_error from './javascript_minified_react_error.json'
+import javascript_no_in_app from './javascript_no_in_app.json'
+import javascript_non_error_promise_rejection from './javascript_non_error_promise_rejection.json'
 import javascript_resolved from './javascript_resolved.json'
 import javascript_script_error from './javascript_script_error.json'
 import javascript_unresolved from './javascript_unresolved.json'
@@ -18,6 +21,9 @@ export const TEST_EVENTS = {
     javascript_resolved,
     javascript_unresolved,
     javascript_script_error,
+    javascript_minified_react_error,
+    javascript_non_error_promise_rejection,
+    javascript_no_in_app,
     node_unresolved,
     python_resolved,
     python_multierror,

@@ -6,6 +6,7 @@ from posthog.schema import (
     ExperimentMeanMetric,
     ExperimentQueryResponse,
     ExperimentRatioMetric,
+    ExperimentRetentionMetric,
     ExperimentStatsBase,
     ExperimentStatsBaseValidated,
     ExperimentStatsValidationFailure,
@@ -16,7 +17,13 @@ from posthog.schema import (
     SessionData,
 )
 
+from posthog.hogql import ast
+from posthog.hogql.modifiers import create_default_modifiers_for_team
+from posthog.hogql.query import HogQLQueryExecutor
+
+from posthog.clickhouse.client.escape import substitute_params
 from posthog.hogql_queries.experiments import CONTROL_VARIANT_KEY
+from posthog.models import Team
 
 from products.experiments.stats.bayesian.enums import PriorType
 from products.experiments.stats.bayesian.method import BayesianConfig, BayesianMethod
@@ -25,6 +32,21 @@ from products.experiments.stats.shared.enums import DifferenceType
 from products.experiments.stats.shared.statistics import ProportionStatistic, RatioStatistic, SampleMeanStatistic
 
 V = TypeVar("V", ExperimentVariantTrendsBaseStats, ExperimentVariantFunnelsBaseStats, ExperimentStatsBase)
+
+
+def get_experiment_query_sql(experiment_query_ast: ast.SelectQuery, team: Team) -> str:
+    """
+    Generate raw SQL for debugging from experiment query AST
+    """
+    executor = HogQLQueryExecutor(
+        query=experiment_query_ast,
+        team=team,
+        modifiers=create_default_modifiers_for_team(team),
+    )
+    clickhouse_sql_with_params, clickhouse_context_with_values = executor.generate_clickhouse_sql()
+
+    # Substitute the parameters to get the final executable query
+    return substitute_params(clickhouse_sql_with_params, clickhouse_context_with_values.values)
 
 
 def _parse_enum_config(value: Any, enum_class: type[Enum], default: Any) -> Any:
@@ -82,6 +104,111 @@ def split_baseline_and_test_variants(
     return control_variant, test_variants
 
 
+def get_variant_result(
+    result: tuple,
+    metric: ExperimentFunnelMetric | ExperimentMeanMetric | ExperimentRatioMetric | ExperimentRetentionMetric,
+) -> tuple[tuple[str, ...] | None, ExperimentStatsBase]:
+    """
+    Parse a single result row from the experiment query into a structured variant result.
+
+    Supports multiple breakdowns - breakdown values are returned as a tuple of strings,
+    even for single breakdowns (for consistency).
+
+    Args:
+        result: Query result tuple with structure depending on metric type and breakdown count
+        metric: The metric definition that determines expected fields and breakdown count
+
+    Returns:
+        Tuple of (breakdown_tuple, ExperimentStatsBase)
+        - breakdown_tuple is None for non-breakdown queries
+        - breakdown_tuple is a tuple of strings for breakdown queries
+          Examples: ("Chrome",) for single, ("MacOS", "Chrome") for multiple
+
+    Expected result structures:
+
+    Without breakdown (num_breakdowns=0):
+        (variant, num_samples, sum, sum_squares, [metric_specific_fields...])
+
+    With single breakdown (num_breakdowns=1):
+        (variant, breakdown_value_1, num_samples, sum, sum_squares, [metric_specific_fields...])
+
+    With multiple breakdowns (num_breakdowns=2):
+        (variant, breakdown_value_1, breakdown_value_2, num_samples, sum, sum_squares, [metric_specific_fields...])
+
+    Metric-specific fields:
+        - FunnelMetric: step_counts, [optional: step_sessions]
+        - RatioMetric: denominator_sum, denominator_sum_squares, numerator_denominator_sum_product
+        - MeanMetric: (no additional fields)
+    """
+    # Determine number of breakdowns from metric definition
+    num_breakdowns = 0
+    if metric.breakdownFilter and metric.breakdownFilter.breakdowns:
+        num_breakdowns = len(metric.breakdownFilter.breakdowns)
+
+    # Extract variant key (always at position 0)
+    variant_key = result[0]
+
+    breakdown_tuple = tuple(str(result[i + 1]) for i in range(num_breakdowns)) if num_breakdowns > 0 else None
+    stats_start_idx = 1 + num_breakdowns
+
+    # Extract base statistical fields
+    num_samples = result[stats_start_idx]
+    sum_value = result[stats_start_idx + 1]
+    sum_squares = result[stats_start_idx + 2]
+    metric_fields_start_idx = stats_start_idx + 3
+
+    # Build base stats
+    base_stats = {
+        "key": variant_key,
+        "number_of_samples": num_samples,
+        "sum": sum_value,
+        "sum_squares": sum_squares,
+    }
+
+    # Add metric-specific fields based on metric type
+    match metric:
+        case ExperimentFunnelMetric():
+            base_stats["step_counts"] = result[metric_fields_start_idx]
+            if len(result) > metric_fields_start_idx + 1:
+                base_stats["step_sessions"] = [
+                    [
+                        SessionData(
+                            person_id=person_id, session_id=session_id, event_uuid=event_uuid, timestamp=timestamp
+                        )
+                        for person_id, session_id, event_uuid, timestamp in step_sessions
+                    ]
+                    for step_sessions in result[metric_fields_start_idx + 1]
+                ]
+        case ExperimentRatioMetric():
+            base_stats["denominator_sum"] = result[metric_fields_start_idx]
+            base_stats["denominator_sum_squares"] = result[metric_fields_start_idx + 1]
+            base_stats["numerator_denominator_sum_product"] = result[metric_fields_start_idx + 2]
+        case ExperimentMeanMetric():
+            pass  # No additional fields beyond base_stats
+
+    return (breakdown_tuple, ExperimentStatsBase(**base_stats))
+
+
+def get_variant_results(
+    sorted_results: list[tuple],
+    metric: ExperimentFunnelMetric | ExperimentMeanMetric | ExperimentRatioMetric | ExperimentRetentionMetric,
+) -> list[tuple[tuple[str, ...] | None, ExperimentStatsBase]]:
+    """
+    Parse multiple result rows from experiment query into structured variant results.
+
+    This is the main entry point for parsing query results with breakdown support.
+    Delegates to get_variant_result for each row.
+
+    Args:
+        sorted_results: List of query result tuples
+        metric: The metric definition that determines expected fields and breakdown count
+
+    Returns:
+        List of (breakdown_tuple, ExperimentStatsBase) tuples
+    """
+    return [get_variant_result(result, metric) for result in sorted_results]
+
+
 def get_new_variant_results(sorted_results: list[tuple]) -> list[ExperimentStatsBase]:
     # Handle both mean metrics (4 values), funnel metrics (5 values) and ratio metrics (7 values)
     variant_results = []
@@ -120,9 +247,81 @@ def get_new_variant_results(sorted_results: list[tuple]) -> list[ExperimentStats
     return variant_results
 
 
+def aggregate_variants_across_breakdowns(
+    variants: list[tuple[tuple[str, ...] | None, ExperimentStatsBase]],
+) -> list[ExperimentStatsBase]:
+    """
+    Aggregates variant results across all breakdown combinations to compute global metrics.
+
+    Takes list of (breakdown_tuple, ExperimentStatsBase) tuples and aggregates by variant key.
+    The breakdown_tuple contains all breakdown values (e.g., ("MacOS", "Chrome") for multiple
+    breakdowns, ("Chrome",) for single breakdown, or None for no breakdown).
+
+    For each variant key (control, test, etc.), sums up:
+    - number_of_samples
+    - sum
+    - sum_squares
+    - For funnel metrics: step_counts (element-wise)
+    - For ratio metrics: denominator_sum, denominator_sum_squares, numerator_denominator_sum_product
+
+    Returns a list of aggregated variants (without breakdown values).
+    """
+    from collections import defaultdict
+
+    variants_by_key: dict[str, list[ExperimentStatsBase]] = defaultdict(list)
+    for _, variant in variants:
+        variants_by_key[variant.key].append(variant)
+
+    aggregated_variants = []
+
+    for key, variant_list in variants_by_key.items():
+        aggregated_stats = {
+            "key": key,
+            "number_of_samples": sum(v.number_of_samples for v in variant_list),
+            "sum": sum(v.sum for v in variant_list),
+            "sum_squares": sum(v.sum_squares for v in variant_list),
+        }
+
+        if variant_list[0].step_counts is not None:
+            aggregated_stats["step_counts"] = [
+                sum(step_values) for step_values in zip(*[v.step_counts for v in variant_list if v.step_counts])
+            ]
+
+            # Aggregate step_sessions across breakdowns for actors view
+            if variant_list[0].step_sessions is not None:
+                aggregated_stats["step_sessions"] = [
+                    [
+                        session
+                        for variant in variant_list
+                        if variant.step_sessions
+                        for session in variant.step_sessions[step_idx]
+                    ]
+                    for step_idx in range(len(variant_list[0].step_sessions))
+                ]
+
+        if variant_list[0].denominator_sum is not None:
+            aggregated_stats.update(
+                {
+                    "denominator_sum": sum(v.denominator_sum for v in variant_list if v.denominator_sum is not None),
+                    "denominator_sum_squares": sum(
+                        v.denominator_sum_squares for v in variant_list if v.denominator_sum_squares is not None
+                    ),
+                    "numerator_denominator_sum_product": sum(
+                        v.numerator_denominator_sum_product
+                        for v in variant_list
+                        if v.numerator_denominator_sum_product is not None
+                    ),
+                }
+            )
+
+        aggregated_variants.append(ExperimentStatsBase(**aggregated_stats))
+
+    return aggregated_variants
+
+
 def validate_variant_result(
     variant_result: ExperimentStatsBase,
-    metric: ExperimentFunnelMetric | ExperimentMeanMetric | ExperimentRatioMetric,
+    metric: ExperimentFunnelMetric | ExperimentMeanMetric | ExperimentRatioMetric | ExperimentRetentionMetric,
     is_baseline=False,
 ) -> ExperimentStatsBaseValidated:
     validation_failures = []
@@ -160,7 +359,8 @@ def validate_variant_result(
 
 
 def metric_variant_to_statistic(
-    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric, variant: ExperimentStatsBaseValidated
+    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric | ExperimentRetentionMetric,
+    variant: ExperimentStatsBaseValidated,
 ) -> SampleMeanStatistic | ProportionStatistic | RatioStatistic:
     if isinstance(metric, ExperimentMeanMetric):
         return SampleMeanStatistic(
@@ -196,7 +396,7 @@ def metric_variant_to_statistic(
 
 
 def get_frequentist_experiment_result(
-    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric,
+    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric | ExperimentRetentionMetric,
     control_variant: ExperimentStatsBase,
     test_variants: list[ExperimentStatsBase],
     stats_config: dict | None = None,
@@ -264,7 +464,7 @@ def get_frequentist_experiment_result(
 
 
 def get_bayesian_experiment_result(
-    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric,
+    metric: ExperimentMeanMetric | ExperimentFunnelMetric | ExperimentRatioMetric | ExperimentRetentionMetric,
     control_variant: ExperimentStatsBase,
     test_variants: list[ExperimentStatsBase],
     stats_config: dict | None = None,

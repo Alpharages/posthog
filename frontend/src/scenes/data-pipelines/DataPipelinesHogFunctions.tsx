@@ -10,7 +10,8 @@ import { hogFunctionsListLogic } from 'scenes/hog-functions/list/hogFunctionsLis
 import { SceneContent } from '~/layout/scenes/components/SceneContent'
 import { SceneDivider } from '~/layout/scenes/components/SceneDivider'
 import { SceneSection } from '~/layout/scenes/components/SceneSection'
-import { HogFunctionTypeType, ProductKey } from '~/types'
+import { ProductKey } from '~/queries/schema/schema-general'
+import { HogFunctionTypeType } from '~/types'
 
 import { nonHogFunctionTemplatesLogic } from './utils/nonHogFunctionTemplatesLogic'
 import { nonHogFunctionsLogic } from './utils/nonHogFunctionsLogic'
@@ -84,6 +85,7 @@ export function DataPipelinesHogFunctions({
             ) : null}
             <SceneSection>
                 <HogFunctionList
+                    syncFiltersWithUrl
                     logicKey={logicKey}
                     type={kind}
                     additionalTypes={additionalKinds}

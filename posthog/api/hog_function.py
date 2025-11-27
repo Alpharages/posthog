@@ -40,6 +40,7 @@ from posthog.models.hog_functions.hog_function import (
     HogFunctionState,
     HogFunctionType,
 )
+from posthog.models.hog_functions.utils import humanize_hog_function_type
 from posthog.models.plugin import TranspilerError
 from posthog.plugins.plugin_server_api import create_hog_invocation_test
 
@@ -444,6 +445,10 @@ class HogFunctionViewSet(
 
             queryset = queryset.filter(combined_q)
 
+        order = self.request.GET.get("order", None)
+        if order:
+            queryset = queryset.order_by(order)
+
         return queryset
 
     @action(detail=False, methods=["GET"])
@@ -549,7 +554,10 @@ class HogFunctionViewSet(
             item_id=serializer.instance.id,
             scope="HogFunction",
             activity="created",
-            detail=Detail(name=serializer.instance.name, type=serializer.instance.type or "destination"),
+            detail=Detail(
+                name=serializer.instance.name,
+                type=humanize_hog_function_type(serializer.instance.type),
+            ),
         )
 
     def perform_update(self, serializer):
@@ -573,7 +581,9 @@ class HogFunctionViewSet(
             scope="HogFunction",
             activity="updated",
             detail=Detail(
-                changes=changes, name=serializer.instance.name, type=serializer.instance.type or "destination"
+                changes=changes,
+                name=serializer.instance.name,
+                type=humanize_hog_function_type(serializer.instance.type),
             ),
         )
 
@@ -626,7 +636,7 @@ class HogFunctionViewSet(
                         activity="updated",
                         detail=Detail(
                             name=function.name,
-                            type="transformation",
+                            type=humanize_hog_function_type(function.type),
                             changes=[
                                 Change(
                                     type="HogFunction",

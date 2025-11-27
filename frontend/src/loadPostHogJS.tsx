@@ -22,6 +22,12 @@ export function loadPostHogJS(): void {
             api_transport: 'fetch',
             disable_surveys: window.IMPERSONATED_SESSION,
             __preview_deferred_init_extensions: shouldDefer(),
+            session_recording: {
+                strictMinimumDuration: true,
+            },
+            error_tracking: {
+                __capturePostHogExceptions: true,
+            },
             loaded: (loadedInstance) => {
                 if (loadedInstance.sessionRecording) {
                     loadedInstance.sessionRecording._forceAllowLocalhostNetworkCapture = true
