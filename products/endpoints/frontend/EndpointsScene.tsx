@@ -4,6 +4,8 @@ import { router } from 'kea-router'
 import { IconPlusSmall } from '@posthog/icons'
 import { LemonButton } from '@posthog/lemon-ui'
 
+import { AppShortcut } from 'lib/components/AppShortcuts/AppShortcut'
+import { keyBinds } from 'lib/components/AppShortcuts/shortcuts'
 import { ProductIntroduction } from 'lib/components/ProductIntroduction/ProductIntroduction'
 import { BigLeaguesHog } from 'lib/components/hedgehogs'
 import { LemonBanner } from 'lib/lemon-ui/LemonBanner'
@@ -24,9 +26,9 @@ import { endpointsUsageLogic } from './endpointsUsageLogic'
 import { OverlayForNewEndpointMenu } from './newEndpointMenu'
 
 const ENDPOINTS_PRODUCT_DESCRIPTION =
-    'Endpoints help you create pre-built SQL queries that you can easily use in your application via our API. Please note that endpoints is in alpha and may not be fully reliable or set in stone.'
+    'Create reusable SQL queries and expose them as API endpoints. Query your data programmatically from any application. Note: Endpoints is in beta - features and APIs may change.'
 const ENDPOINTS_API_USAGE_PRODUCT_DESCRIPTION =
-    'Monitor your API usage and cost. Please note that endpoints is in alpha and may not be fully reliable. Things will change as we learn what you need.'
+    'Monitor API request volume, response times, and costs for your endpoints. Track which endpoints are most used and identify performance issues.'
 
 export const scene: SceneExport = {
     component: EndpointsScene,
@@ -61,24 +63,32 @@ export function EndpointsScene({ tabId }: { tabId?: string }): JSX.Element {
                             type: sceneConfigurations[Scene.EndpointsScene].iconType || 'default_icon_type',
                         }}
                         actions={
-                            <LemonButton
-                                type="primary"
-                                to={urls.sqlEditor(undefined, undefined, undefined, undefined, OutputTab.Endpoint)}
-                                sideAction={{
-                                    dropdown: {
-                                        placement: 'bottom-end',
-                                        className: 'new-endpoint-overlay',
-                                        actionable: true,
-                                        overlay: <OverlayForNewEndpointMenu dataAttr="new-endpoint-option" />,
-                                    },
-                                    'data-attr': 'new-endpoint-dropdown',
-                                }}
-                                data-attr="new-endpoint-button"
-                                size="small"
-                                icon={<IconPlusSmall />}
+                            <AppShortcut
+                                name="EndpointsNew"
+                                keybind={[keyBinds.new]}
+                                intent="New endpoint"
+                                interaction="click"
+                                scope={Scene.EndpointsScene}
                             >
-                                New
-                            </LemonButton>
+                                <LemonButton
+                                    type="primary"
+                                    to={urls.sqlEditor(undefined, undefined, undefined, undefined, OutputTab.Endpoint)}
+                                    sideAction={{
+                                        dropdown: {
+                                            placement: 'bottom-end',
+                                            className: 'new-endpoint-overlay',
+                                            actionable: true,
+                                            overlay: <OverlayForNewEndpointMenu dataAttr="new-endpoint-option" />,
+                                        },
+                                        'data-attr': 'new-endpoint-dropdown',
+                                    }}
+                                    data-attr="new-endpoint-button"
+                                    size="small"
+                                    icon={<IconPlusSmall />}
+                                >
+                                    New
+                                </LemonButton>
+                            </AppShortcut>
                         }
                     />
                     <LemonBanner
@@ -87,7 +97,7 @@ export function EndpointsScene({ tabId }: { tabId?: string }): JSX.Element {
                         action={{ children: 'Send feedback', id: 'endpoints-feedback-button' }}
                     >
                         <p>
-                            Endpoints is in alpha and it may not be fully reliable. We are actively working on it and it
+                            Endpoints is in beta and it may not be fully reliable. We are actively working on it and it
                             may change while we work with you on what works best. Please let us know what you'd like to
                             see here and/or report any issues directly to us!
                         </p>

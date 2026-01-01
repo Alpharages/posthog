@@ -196,11 +196,11 @@ impl<T> KafkaMessage<T> {
         Ok(out)
     }
 
-    // Convenience message for republishing the original event to downstream topic
-    pub fn to_original_contents(self) -> (Vec<u8>, OwnedHeaders) {
+    // Convenience method for republishing the original event to downstream topic
+    pub fn to_original_contents(&self) -> (&[u8], Option<&OwnedHeaders>) {
         (
-            self.original_payload.unwrap_or_default(),
-            self.original_headers.unwrap_or_default(),
+            self.original_payload.as_deref().unwrap_or(&[]),
+            self.original_headers.as_ref(),
         )
     }
 
@@ -228,6 +228,20 @@ impl<T> KafkaMessage<T> {
 
     pub fn take_message(&mut self) -> Option<T> {
         self.message.take()
+    }
+
+    /// Create a simple KafkaMessage for testing purposes
+    #[cfg(test)]
+    pub fn new_for_test(partition: Partition, offset: i64, message: T) -> Self {
+        Self {
+            topic_partition: partition,
+            offset,
+            key: None,
+            message: Some(message),
+            timestamp: SystemTime::now(),
+            original_headers: None,
+            original_payload: None,
+        }
     }
 }
 
@@ -285,6 +299,7 @@ mod tests {
             message: Some(CapturedEvent {
                 uuid: event_uuid,
                 distinct_id: distinct_id.to_string(),
+                session_id: None,
                 ip: ip.clone(),
                 now: now_rfc3339.clone(),
                 token: token.clone(),

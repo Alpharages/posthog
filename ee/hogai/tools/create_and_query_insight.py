@@ -3,8 +3,9 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from posthog.schema import AssistantTool, AssistantToolCallMessage, VisualizationMessage
+from posthog.schema import AssistantTool, AssistantToolCallMessage
 
+from ee.hogai.artifacts.utils import is_visualization_artifact_message
 from ee.hogai.chat_agent.insights_graph.graph import InsightsGraph
 from ee.hogai.chat_agent.schema_generator.nodes import SchemaGenerationException
 from ee.hogai.context.context import AssistantContextManager
@@ -156,6 +157,10 @@ class CreateAndQueryInsightTool(MaxTool):
     description: str = INSIGHT_TOOL_PROMPT
     context_prompt_template: str = INSIGHT_TOOL_CONTEXT_PROMPT_TEMPLATE
 
+    def get_required_resource_access(self):
+        """Creating/querying an insight requires editor-level access to insights."""
+        return [("insight", "editor")]
+
     async def _arun_impl(self, query_description: str) -> tuple[str, ToolMessagesArtifact | None]:
         graph = InsightsGraph(self._team, self._user).compile_full_graph()
         new_state = self._state.model_copy(
@@ -187,16 +192,19 @@ class CreateAndQueryInsightTool(MaxTool):
                 )
             )
 
-        # If the previous message is not a visualization message, the agent has requested human feedback.
-        if not isinstance(maybe_viz_message, VisualizationMessage):
+        # If the previous message is not a visualization artifact message, the agent has requested human feedback.
+        if not is_visualization_artifact_message(maybe_viz_message):
             return "", ToolMessagesArtifact(messages=[tool_call_message])
 
+        visualization_content = await self._context_manager.artifacts.aget_content_by_short_id(
+            maybe_viz_message.artifact_id
+        )
         # If the contextual tool is available, we're editing an insight.
         # Add the UI payload to the tool call message.
         if self.is_editing_mode(self._context_manager):
             tool_call_message = AssistantToolCallMessage(
                 content=tool_call_message.content,
-                ui_payload={self.get_name(): maybe_viz_message.answer.model_dump(exclude_none=True)},
+                ui_payload={self.get_name(): visualization_content.query.model_dump(exclude_none=True)},
                 id=tool_call_message.id,
                 tool_call_id=tool_call_message.tool_call_id,
             )

@@ -32,7 +32,7 @@ exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loa
       "isActive": false,
       "kind": "window",
       "startTimestamp": 1747540013980,
-      "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+      "windowId": 1,
     },
     {
       "durationMs": 842,
@@ -40,7 +40,7 @@ exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loa
       "isActive": true,
       "kind": "window",
       "startTimestamp": 1747540013980,
-      "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+      "windowId": 1,
     },
     {
       "durationMs": 299819,
@@ -48,7 +48,7 @@ exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loa
       "isActive": false,
       "kind": "gap",
       "startTimestamp": 1747540014822,
-      "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+      "windowId": 1,
     },
     {
       "durationMs": 175,
@@ -56,13 +56,13 @@ exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loa
       "isActive": true,
       "kind": "window",
       "startTimestamp": 1747540314641,
-      "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+      "windowId": 1,
     },
   ],
   "sessionRecordingId": "2",
   "sessionRetentionPeriodDays": null,
   "snapshotsByWindowId": {
-    "0196e180-73bd-7b72-869b-35ee20bbbcd1": [
+    "1": [
       {
         "data": {
           "payload": {
@@ -73,7 +73,7 @@ exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loa
         },
         "timestamp": 1747540013980,
         "type": 5,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -83,7 +83,7 @@ exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loa
         },
         "timestamp": 1747540013980,
         "type": 3,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -93,7 +93,7 @@ exports[`sessionRecordingDataCoordinatorLogic blobby v2 loading session core loa
         },
         "timestamp": 1747540014296,
         "type": 4,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "cv": "2024-10",
@@ -31642,7 +31642,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540014369,
         "type": 2,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -31677,7 +31677,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540014498,
         "type": 5,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -31756,7 +31756,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540014498,
         "type": 5,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -31766,7 +31766,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540014816,
         "type": 3,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -31775,7 +31775,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540014822,
         "type": 5,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -31785,7 +31785,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540314641,
         "type": 4,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "cv": "2024-10",
@@ -63334,7 +63334,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540314709,
         "type": 2,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
       {
         "data": {
@@ -63349,7 +63349,7 @@ For ad-hoc querying, having the same schema would be helpful.",
         },
         "timestamp": 1747540314816,
         "type": 5,
-        "windowId": "0196e180-73bd-7b72-869b-35ee20bbbcd1",
+        "windowId": 1,
       },
     ],
   },
