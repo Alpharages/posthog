@@ -7,28 +7,35 @@ export DEBIAN_FRONTEND=noninteractive
 # Automatically restart without asking.
 # this gets around needrestart command halting for user input
 export RESTART_MODE=l
-export POSTHOG_APP_TAG="${POSTHOG_APP_TAG:-latest}"
 
-# Check if .env file already exists
+# Store command line arguments before loading .env
+ARG_VERSION=$1
+ARG_DOMAIN=$2
+
+# Check if .env file already exists and load secrets only
 if [ -f ".env" ]; then
-    echo "📄 Found existing .env file, loading configuration..."
-    # Safely source existing .env file to preserve secrets
-    # Use grep to filter out comments and empty lines, then export each variable
-    while IFS='=' read -r key value; do
-        # Skip empty lines and comments
-        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
-        # Remove quotes from value if present
-        value="${value%\"}"
-        value="${value#\"}"
-        # Export the variable
-        export "$key=$value"
-    done < <(grep -v '^#' .env | grep -v '^$')
-    echo "✓ Using existing secrets and configuration"
-else
+    echo "📄 Found existing .env file, loading secrets..."
+    # Only load secrets and domain from existing .env
+    if grep -q '^POSTHOG_SECRET=' .env; then
+        POSTHOG_SECRET=$(grep '^POSTHOG_SECRET=' .env | cut -d'=' -f2-)
+        export POSTHOG_SECRET
+    fi
+    if grep -q '^ENCRYPTION_SALT_KEYS=' .env; then
+        ENCRYPTION_SALT_KEYS=$(grep '^ENCRYPTION_SALT_KEYS=' .env | cut -d'=' -f2-)
+        export ENCRYPTION_SALT_KEYS
+    fi
+    if grep -q '^DOMAIN=' .env && [ -z "$ARG_DOMAIN" ]; then
+        DOMAIN=$(grep '^DOMAIN=' .env | cut -d'=' -f2-)
+        export DOMAIN
+    fi
+    echo "✓ Loaded existing secrets"
+fi
+
+# Generate secrets if not loaded from .env
+if [ -z "$POSTHOG_SECRET" ]; then
     echo "🔐 Generating new secrets..."
     POSTHOG_SECRET=$(head -c 28 /dev/urandom | sha224sum -b | head -c 56)
     export POSTHOG_SECRET
-
     ENCRYPTION_SALT_KEYS=$(openssl rand -hex 16)
     export ENCRYPTION_SALT_KEYS
     echo "✓ New secrets generated"
@@ -43,16 +50,17 @@ echo ""
 echo "This script assumes you have already cloned the PostHog repository locally."
 echo ""
 
-if [ -n "$1" ]
-then
-    export POSTHOG_APP_TAG=$1
+# Set POSTHOG_APP_TAG from args or prompt (always override .env)
+if [ -n "$ARG_VERSION" ]; then
+    export POSTHOG_APP_TAG=$ARG_VERSION
+    echo "Using version from argument: $POSTHOG_APP_TAG"
 else
     echo "What version of PostHog would you like to install? (We default to 'latest')"
     echo "You can check out available versions here: https://hub.docker.com/r/posthog/posthog/tags"
     read -r POSTHOG_APP_TAG_READ
-    if [ -z "$POSTHOG_APP_TAG_READ" ]
-    then
-        echo "Using default and installing $POSTHOG_APP_TAG"
+    if [ -z "$POSTHOG_APP_TAG_READ" ]; then
+        export POSTHOG_APP_TAG="latest"
+        echo "Using default: $POSTHOG_APP_TAG"
     else
         export POSTHOG_APP_TAG=$POSTHOG_APP_TAG_READ
         echo "Using provided tag: $POSTHOG_APP_TAG"
@@ -60,9 +68,10 @@ else
 fi
 
 echo ""
-if [ -n "$2" ]
-then
-    export DOMAIN=$2
+# Set DOMAIN from args or use existing or prompt
+if [ -n "$ARG_DOMAIN" ]; then
+    export DOMAIN=$ARG_DOMAIN
+    echo "Using domain from argument: $DOMAIN"
 else
     # Use existing DOMAIN if available, otherwise prompt
     if [ -z "$DOMAIN" ]; then

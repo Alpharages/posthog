@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+
+set -e
+
+# PostHog Server Deployment Script
+# This script deploys PostHog on a remote server using local source code
+
+echo ""
+echo "🦔 PostHog Server Deployment Script"
+echo ""
+
+# Get script directory and change to repo root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/.."
+
+# Verify we're in the posthog repository
+if [ ! -f "docker-compose.personal.yml" ]; then
+    echo "❌ Error: docker-compose.personal.yml not found in current directory"
+    echo "Please run this script from the PostHog repository root"
+    exit 1
+fi
+
+echo "✓ Found docker-compose.personal.yml"
+
+# Load environment variables from .env
+if [ ! -f ".env" ]; then
+    echo "❌ Error: .env file not found"
+    echo "Please create a .env file with required variables:"
+    echo "  POSTHOG_SECRET=<your-secret>"
+    echo "  ENCRYPTION_SALT_KEYS=<your-salt>"
+    echo "  DOMAIN=<your-domain>"
+    echo "  REGISTRY_URL=posthog/posthog"
+    echo "  POSTHOG_APP_TAG=latest"
+    exit 1
+fi
+
+echo "✓ Loading environment from .env"
+set -a
+source .env
+set +a
+
+# Validate required environment variables
+REQUIRED_VARS=("POSTHOG_SECRET" "ENCRYPTION_SALT_KEYS" "DOMAIN" "REGISTRY_URL" "POSTHOG_APP_TAG")
+for var in "${REQUIRED_VARS[@]}"; do
+    if [ -z "${!var}" ]; then
+        echo "❌ Error: Required variable $var is not set in .env"
+        exit 1
+    fi
+done
+
+echo "✓ Environment variables validated"
+echo "  - Domain: $DOMAIN"
+echo "  - Registry: $REGISTRY_URL"
+echo "  - Tag: $POSTHOG_APP_TAG"
+
+# Download GeoLite2-City.mmdb if it doesn't exist
+echo ""
+echo "📍 Preparing GeoIP database..."
+mkdir -p ./share
+
+if [ ! -f ./share/GeoLite2-City.mmdb ]; then
+    echo "  Downloading GeoIP database (this may take a minute)..."
+    
+    # Try PostHog's CDN first
+    if curl -f -L 'https://mmdbcdn.posthog.net/' --http1.1 2>/dev/null | \
+       command -v brotli >/dev/null 2>&1 && brotli --decompress --output=./share/GeoLite2-City.mmdb; then
+        echo "  ✓ Downloaded from PostHog CDN"
+    else
+        # Fallback to GitHub mirror
+        echo "  Trying GitHub mirror..."
+        if curl -f -L -o ./share/GeoLite2-City.mmdb \
+           "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"; then
+            echo "  ✓ Downloaded from GitHub mirror"
+        else
+            echo "  ❌ Error: Failed to download GeoIP database"
+            echo "  You can download it manually from:"
+            echo "    https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
+            echo "  And place it at: ./share/GeoLite2-City.mmdb"
+            exit 1
+        fi
+    fi
+    
+    # Create metadata file
+    echo "{\"date\": \"$(date +%Y-%m-%d)\"}" > ./share/GeoLite2-City.json
+    chmod 644 ./share/GeoLite2-City.mmdb ./share/GeoLite2-City.json
+    
+    # Verify file size (should be around 60MB)
+    FILE_SIZE=$(stat -f%z ./share/GeoLite2-City.mmdb 2>/dev/null || stat -c%s ./share/GeoLite2-City.mmdb 2>/dev/null)
+    if [ "$FILE_SIZE" -lt 10000000 ]; then
+        echo "  ⚠️  Warning: Downloaded file seems too small ($FILE_SIZE bytes)"
+        echo "     Expected around 60MB. The download may have failed."
+    else
+        echo "  ✓ GeoIP database downloaded successfully ($(numfmt --to=iec-i --suffix=B $FILE_SIZE))"
+    fi
+else
+    echo "  ✓ GeoIP database already exists"
+fi
+
+# Setup compose helper scripts
+echo ""
+echo "📝 Setting up compose scripts..."
+rm -rf compose
+mkdir -p compose
+
+cat > compose/start <<'EOF'
+#!/bin/bash
+./compose/wait
+./bin/migrate
+./bin/docker-server
+EOF
+chmod +x compose/start
+
+cat > compose/temporal-django-worker <<'EOF'
+#!/bin/bash
+./bin/temporal-django-worker
+EOF
+chmod +x compose/temporal-django-worker
+
+cat > compose/wait <<'EOF'
+#!/usr/bin/env python3
+
+import socket
+import time
+
+def loop():
+    print("Waiting for ClickHouse and Postgres to be ready")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect(('clickhouse', 9000))
+        print("ClickHouse is ready")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect(('db', 5432))
+        print("Postgres is ready")
+    except ConnectionRefusedError as e:
+        time.sleep(5)
+        loop()
+
+loop()
+EOF
+chmod +x compose/wait
+
+echo "✓ Compose scripts created"
+
+# Stop any existing deployment
+echo ""
+echo "🛑 Stopping any existing containers..."
+docker-compose -f docker-compose.personal.yml down 2>/dev/null || true
+echo "✓ Existing containers stopped"
+
+# Build and start the stack
+echo ""
+echo "🚀 Building and starting PostHog stack..."
+echo "   This may take 10-20 minutes on first build..."
+echo ""
+
+# Copy docker-compose.personal.yml to docker-compose.yml for compatibility
+cp docker-compose.personal.yml docker-compose.yml
+
+# Retry up to 3 times
+for attempt in 1 2 3; do
+    echo "📦 Build attempt $attempt/3..."
+    if docker-compose -f docker-compose.yml up -d --build; then
+        echo "✓ Stack built and started successfully"
+        BUILD_SUCCESS=1
+        break
+    else
+        if [ $attempt -lt 3 ]; then
+            echo "⚠️  Build failed, waiting 30s before retry..."
+            sleep 30
+        else
+            echo "❌ Failed to build/start stack after 3 attempts"
+            echo ""
+            echo "Check logs with: docker-compose logs"
+            exit 1
+        fi
+    fi
+done
+
+# Health check
+echo ""
+echo "⏳ Waiting for PostHog to be ready (timeout: 10 minutes)..."
+echo "   This includes running migrations and starting all services"
+echo ""
+
+HEALTH_START=$(date +%s)
+TIMEOUT=600
+
+while true; do
+    CURRENT=$(date +%s)
+    ELAPSED=$((CURRENT - HEALTH_START))
+    
+    if [ $ELAPSED -ge $TIMEOUT ]; then
+        echo ""
+        echo "❌ Health check timed out after 10 minutes"
+        echo ""
+        echo "Check container status:"
+        echo "  docker-compose ps"
+        echo ""
+        echo "Check logs:"
+        echo "  docker-compose logs web"
+        echo "  docker-compose logs clickhouse"
+        echo "  docker-compose logs db"
+        exit 1
+    fi
+    
+    # Check health endpoint
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' http://localhost/_health 2>/dev/null || echo "000")
+    
+    if [ "$HTTP_CODE" = "200" ]; then
+        HEALTH_END=$(date +%s)
+        HEALTH_DURATION=$((HEALTH_END - HEALTH_START))
+        echo ""
+        echo "✓ PostHog is ready! (took ${HEALTH_DURATION} seconds)"
+        break
+    fi
+    
+    # Show progress every 30 seconds
+    if [ $((ELAPSED % 30)) -eq 0 ] && [ $ELAPSED -gt 0 ]; then
+        echo "  Still waiting... (${ELAPSED}s elapsed)"
+    fi
+    
+    sleep 5
+done
+
+# Success!
+echo ""
+echo "🎉🎉🎉  Deployment Complete! 🎉🎉🎉"
+echo ""
+echo "PostHog is now running at: https://${DOMAIN}"
+echo ""
+echo "Useful commands:"
+echo "  Stop:    docker-compose stop"
+echo "  Start:   docker-compose start"
+echo "  Restart: docker-compose restart"
+echo "  Logs:    docker-compose logs -f [service]"
+echo "  Status:  docker-compose ps"
+echo ""
+echo "It's dangerous to go alone! Take this: 🦔"

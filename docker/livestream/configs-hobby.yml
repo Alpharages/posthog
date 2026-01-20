@@ -7,4 +7,4 @@ kafka:
     session_recording_enabled: true
     session_recording_security_protocol: 'PLAINTEXT'
 mmdb:
-    path: 'GeoLite2-City.mmdb'
+    path: '/share/GeoLite2-City.mmdb'
