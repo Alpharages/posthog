@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import json
 from typing import Generic, Optional, TypeVar, Union
 
 from posthog.schema import (
@@ -72,10 +73,30 @@ class _BaseSource(ABC, Generic[ConfigType]):
     def get_source_config(self) -> SourceConfig:
         raise NotImplementedError()
 
-    def parse_config(self, job_inputs: dict) -> ConfigType:
+    def parse_config(self, job_inputs: dict | str) -> ConfigType:
+        # Handle case where job_inputs is a JSON string
+        if isinstance(job_inputs, str):
+            try:
+                job_inputs = json.loads(job_inputs)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON string for job_inputs: {e}")
+        
+        if not isinstance(job_inputs, dict):
+            raise TypeError(f"job_inputs must be a dict or JSON string, got {type(job_inputs).__name__}")
+        
         return self._config_class.from_dict(job_inputs)
 
-    def validate_config(self, job_inputs: dict) -> tuple[bool, list[str]]:
+    def validate_config(self, job_inputs: dict | str) -> tuple[bool, list[str]]:
+        # Handle case where job_inputs is a JSON string
+        if isinstance(job_inputs, str):
+            try:
+                job_inputs = json.loads(job_inputs)
+            except json.JSONDecodeError as e:
+                return False, [f"Invalid JSON string for job_inputs: {e}"]
+        
+        if not isinstance(job_inputs, dict):
+            return False, [f"job_inputs must be a dict or JSON string, got {type(job_inputs).__name__}"]
+        
         return self._config_class.validate_dict(job_inputs)
 
     def validate_credentials(
