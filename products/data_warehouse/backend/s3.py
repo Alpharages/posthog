@@ -34,7 +34,16 @@ def get_size_of_folder(path: str) -> float:
 
 
 def ensure_bucket_exists(s3_url: str, s3_key: str, s3_secret: str, s3_endpoint: Optional[str] = None) -> None:
-    s3_client = boto3.client("s3", aws_access_key_id=s3_key, aws_secret_access_key=s3_secret, endpoint_url=s3_endpoint)
+    import structlog
+    logger = structlog.get_logger(__name__)
+    
+    s3_client = boto3.client(
+        "s3",
+        aws_access_key_id=s3_key,
+        aws_secret_access_key=s3_secret,
+        endpoint_url=s3_endpoint,
+        region_name="us-east-1",  # Required for MinIO
+    )
 
     parsed = urlparse(s3_url)
     if parsed.scheme != "s3":
@@ -44,16 +53,28 @@ def ensure_bucket_exists(s3_url: str, s3_key: str, s3_secret: str, s3_endpoint: 
 
     try:
         s3_client.head_bucket(Bucket=bucket_name)
+        logger.debug(f"Bucket {bucket_name} already exists")
     except botocore.exceptions.ClientError as e:
         error = e.response.get("Error")
         if not error:
+            logger.error(f"Failed to check bucket {bucket_name}, no error details", exc_info=e)
             raise
 
         error_code = error.get("Code")
         if not error_code:
+            logger.error(f"Failed to check bucket {bucket_name}, no error code", exc_info=e)
             raise
 
-        if int(error_code) == 404:
-            s3_client.create_bucket(Bucket=bucket_name)
+        # Error code can be "404", 404, or "NoSuchBucket"
+        if error_code == "404" or error_code == 404 or error_code == "NoSuchBucket":
+            logger.info(f"Bucket {bucket_name} does not exist, creating it...")
+            try:
+                s3_client.create_bucket(Bucket=bucket_name)
+                logger.info(f"Successfully created bucket {bucket_name}")
+            except Exception as create_error:
+                logger.error(f"Failed to create bucket {bucket_name}", exc_info=create_error)
+                raise
         else:
+            logger.error(f"Failed to check bucket {bucket_name} with error code {error_code}", exc_info=e)
             raise
+
