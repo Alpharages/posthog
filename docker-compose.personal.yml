@@ -90,6 +90,7 @@ services:
             OBJECT_STORAGE_ENABLED: true
             ENCRYPTION_SALT_KEYS: $ENCRYPTION_SALT_KEYS
             POSTHOG_SKIP_MIGRATION_CHECKS: '1'
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
         depends_on:
             db:
@@ -127,6 +128,7 @@ services:
             OTEL_SDK_DISABLED: 'true'
             USE_GRANIAN: 'true'
             GRANIAN_WORKERS: '2'
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
             OPT_OUT_CAPTURE: ${OPT_OUT_CAPTURE:-false}
         depends_on:
             - db
@@ -153,9 +155,11 @@ services:
             SESSION_RECORDING_V2_S3_ENDPOINT: http://seaweedfs:8333
             OBJECT_STORAGE_ENABLED: true
             CDP_REDIS_HOST: redis7
-            CDP_REDIS_PORT: 6379
+            CDP_REDIS_PORT: '6379'
+            CDP_REDIS_PASSWORD: ''
             LOGS_REDIS_HOST: redis7
-            LOGS_REDIS_PORT: 6379
+            LOGS_REDIS_PORT: '6379'
+            LOGS_REDIS_PASSWORD: ''
             LOGS_REDIS_TLS: 'false'
             ENCRYPTION_SALT_KEYS: $ENCRYPTION_SALT_KEYS
             CYCLOTRON_DATABASE_URL: 'postgres://posthog:posthog@db:5432/posthog'
@@ -281,6 +285,24 @@ services:
             - seaweedfs
             - temporal
 
+    temporal-data-warehouse-worker:
+        command: python3 manage.py start_temporal_worker --task-queue data-warehouse-task-queue
+        extends:
+            file: docker-compose.base.yml
+            service: temporal-django-worker
+        image: $REGISTRY_URL:$POSTHOG_APP_TAG
+        environment:
+            SITE_URL: https://$DOMAIN
+            SECRET_KEY: $POSTHOG_SECRET
+        depends_on:
+            - db
+            - redis
+            - clickhouse
+            - kafka
+            - objectstorage
+            - seaweedfs
+            - temporal
+
     cyclotron-janitor:
         extends:
             file: docker-compose.base.yml
@@ -316,6 +338,8 @@ services:
         extends:
             file: docker-compose.base.yml
             service: property-defs-rs
+        environment:
+            KAFKA_TLS: 'false'
         depends_on:
             kafka-init:
                 condition: service_completed_successfully
@@ -337,6 +361,8 @@ services:
         extends:
             file: docker-compose.base.yml
             service: feature-flags
+        environment:
+            KAFKA_TLS: 'false'
         depends_on:
             - db
             - redis
