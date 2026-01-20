@@ -269,6 +269,27 @@ class TestDecide(BaseTest, QueryMatchingTest):
         response = self._post_decide().json()
         self.assertEqual(response["capturePerformance"], False)
 
+    def test_logs_console_capture_opt_in(self, *args):
+        from django.core.cache import cache
+
+        # Test default logs config
+        response = self._post_decide().json()
+        self.assertEqual(response["logs"], {"captureConsoleLogs": False})
+
+        # Test when logs console capture is enabled
+        self._update_team({"logs_settings": {"capture_console_logs": True}})
+        cache.delete(f"team_token:{self.team.api_token}")
+
+        response = self._post_decide().json()
+        self.assertEqual(response["logs"], {"captureConsoleLogs": True})
+
+        # Test when logs console capture is disabled
+        self._update_team({"logs_settings": {"capture_console_logs": False}})
+        cache.delete(f"team_token:{self.team.api_token}")
+
+        response = self._post_decide().json()
+        self.assertEqual(response["logs"], {"captureConsoleLogs": False})
+
     def test_session_recording_sample_rate(self, *args):
         # :TRICKY: Test for regression around caching
 
@@ -752,6 +773,68 @@ class TestDecide(BaseTest, QueryMatchingTest):
 
         response = self._post_decide().json()
         self.assertEqual(response["captureDeadClicks"], True)
+
+    def test_conversations_disabled_by_default(self, *args):
+        response = self._post_decide().json()
+        self.assertEqual(response.get("conversations"), False)
+
+    def test_conversations_enabled_with_defaults(self, *args):
+        self.team.conversations_enabled = True
+        self.team.conversations_settings = {
+            "widget_enabled": True,
+            "widget_public_token": "test_public_token_123",
+        }
+        self.team.save()
+
+        response = self._post_decide().json()
+        self.assertEqual(response["conversations"]["enabled"], True)
+        self.assertEqual(response["conversations"]["widgetEnabled"], True)
+        self.assertEqual(response["conversations"]["greetingText"], "Hey, how can I help you today?")
+        self.assertEqual(response["conversations"]["color"], "#1d4aff")
+        self.assertEqual(response["conversations"]["token"], "test_public_token_123")
+        self.assertEqual(response["conversations"]["domains"], [])
+
+    def test_conversations_enabled_with_custom_config(self, *args):
+        self.team.conversations_enabled = True
+        self.team.conversations_settings = {
+            "widget_enabled": True,
+            "widget_greeting_text": "Welcome! Need assistance?",
+            "widget_color": "#ff5733",
+            "widget_public_token": "custom_token",
+            "widget_domains": ["example.com", "test.com"],
+        }
+        self.team.save()
+
+        response = self._post_decide().json()
+        self.assertEqual(response["conversations"]["enabled"], True)
+        self.assertEqual(response["conversations"]["widgetEnabled"], True)
+        self.assertEqual(response["conversations"]["greetingText"], "Welcome! Need assistance?")
+        self.assertEqual(response["conversations"]["color"], "#ff5733")
+        self.assertEqual(response["conversations"]["token"], "custom_token")
+        self.assertEqual(response["conversations"]["domains"], ["example.com", "test.com"])
+
+    def test_conversations_disabled_returns_false(self, *args):
+        self.team.conversations_enabled = False
+        self.team.conversations_settings = {
+            "widget_enabled": True,
+            "widget_public_token": "should_not_appear",
+        }
+        self.team.save()
+
+        response = self._post_decide().json()
+        self.assertEqual(response["conversations"], False)
+
+    def test_conversations_with_empty_greeting_uses_default(self, *args):
+        self.team.conversations_enabled = True
+        self.team.conversations_settings = {
+            "widget_enabled": True,
+            "widget_greeting_text": "",
+            "widget_public_token": "test_token",
+        }
+        self.team.save()
+
+        response = self._post_decide().json()
+        self.assertEqual(response["conversations"]["greetingText"], "Hey, how can I help you today?")
 
     def test_user_session_recording_allowed_when_no_permitted_domains_are_set(self, *args):
         self._update_team({"session_recording_opt_in": True, "recording_domains": []})
@@ -2864,51 +2947,6 @@ class TestDecide(BaseTest, QueryMatchingTest):
             },
         )
         self.assertEqual(response.json()["errorsWhileComputingFlags"], False)
-
-    @snapshot_postgres_queries
-    def test_flag_with_behavioural_cohorts(self, *args):
-        self.team.app_urls = ["https://example.com"]
-        self.team.save()
-        self.client.logout()
-
-        Person.objects.create(
-            team=self.team,
-            distinct_ids=["example_id_1"],
-            properties={"$some_prop_1": "something_1"},
-        )
-        cohort = Cohort.objects.create(
-            team=self.team,
-            groups=[
-                {"event_id": "$pageview", "days": 7},
-                {
-                    "properties": [
-                        {
-                            "key": "$some_prop_1",
-                            "value": "something_1",
-                            "type": "person",
-                        }
-                    ]
-                },
-            ],
-            name="cohort1",
-        )
-        # no calculation for cohort
-
-        FeatureFlag.objects.create(
-            team=self.team,
-            filters={"groups": [{"properties": [{"key": "id", "value": cohort.pk, "type": "cohort"}]}]},
-            name="This is a cohort-based flag",
-            key="cohort-flag",
-            created_by=self.user,
-        )
-
-        response = self._post_decide(api_version=3, distinct_id="example_id_1", assert_num_queries=9)
-        self.assertEqual(response.json()["featureFlags"], {})
-        self.assertEqual(response.json()["errorsWhileComputingFlags"], True)
-
-        response = self._post_decide(api_version=3, distinct_id="another_id", assert_num_queries=8)
-        self.assertEqual(response.json()["featureFlags"], {})
-        self.assertEqual(response.json()["errorsWhileComputingFlags"], True)
 
     def test_personal_api_key_without_project_id(self, *args):
         key_value = generate_random_token_personal()

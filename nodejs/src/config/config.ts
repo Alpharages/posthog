@@ -206,6 +206,7 @@ export function getDefaultConfig(): PluginsServerConfig {
         CDP_CYCLOTRON_USE_BULK_COPY_JOB: isProdEnv() ? false : true,
         CDP_CYCLOTRON_COMPRESS_KAFKA_DATA: true,
         CDP_HOG_WATCHER_SAMPLE_RATE: 0, // default is off
+        CDP_BATCH_WORKFLOW_PRODUCER_BATCH_SIZE: 1, // set to 1 intentionally, batch requests fanout into many workflow invocations
 
         CDP_FETCH_RETRIES: 3,
         CDP_FETCH_BACKOFF_BASE_MS: 1000,
@@ -283,6 +284,7 @@ export function getDefaultConfig(): PluginsServerConfig {
         TIMESTAMP_COMPARISON_LOGGING_SAMPLE_RATE: isDevEnv() || isTestEnv() ? 1.0 : 0.0,
 
         PERSON_BATCH_WRITING_DB_WRITE_MODE: 'NO_ASSERT',
+        PERSON_BATCH_WRITING_USE_BATCH_UPDATES: true,
         PERSON_BATCH_WRITING_OPTIMISTIC_UPDATES_ENABLED: false,
         PERSON_BATCH_WRITING_MAX_CONCURRENT_UPDATES: 10,
         PERSON_BATCH_WRITING_MAX_OPTIMISTIC_UPDATE_RETRIES: 5,

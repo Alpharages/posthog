@@ -7,12 +7,13 @@ from django.db.models import Prefetch, Q
 import structlog
 import temporalio
 from dateutil import parser
+from drf_spectacular.utils import extend_schema
 from rest_framework import filters, serializers, status, viewsets
 from rest_framework.exceptions import ValidationError
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from posthog.schema import SourceFieldInputConfig, SourceFieldInputConfigType, SourceFieldSwitchGroupConfig
+from posthog.schema import ProductKey, SourceFieldInputConfig, SourceFieldInputConfigType, SourceFieldSwitchGroupConfig
 
 from posthog.hogql.database.database import Database
 
@@ -26,6 +27,8 @@ from posthog.models.activity_logging.external_data_utils import (
 )
 from posthog.models.signals import model_activity_signal, mutable_receiver
 from posthog.models.user import User
+from posthog.rbac.access_control_api_mixin import AccessControlViewSetMixin
+from posthog.rbac.user_access_control import UserAccessControlSerializerMixin
 from posthog.temporal.data_imports.sources import SourceRegistry
 from posthog.temporal.data_imports.sources.common.base import FieldType
 from posthog.temporal.data_imports.sources.common.config import Config
@@ -115,7 +118,7 @@ class ExternalDataJobSerializers(serializers.ModelSerializer):
         ).data
 
 
-class ExternalDataSourceSerializers(serializers.ModelSerializer):
+class ExternalDataSourceSerializers(UserAccessControlSerializerMixin, serializers.ModelSerializer):
     account_id = serializers.CharField(write_only=True)
     client_secret = serializers.CharField(write_only=True)
     last_run_at = serializers.SerializerMethodField(read_only=True)
@@ -139,10 +142,12 @@ class ExternalDataSourceSerializers(serializers.ModelSerializer):
             "source_type",
             "latest_error",
             "prefix",
+            "description",
             "last_run_at",
             "schemas",
             "job_inputs",
             "revenue_analytics_config",
+            "user_access_level",
         ]
         read_only_fields = [
             "id",
@@ -155,6 +160,7 @@ class ExternalDataSourceSerializers(serializers.ModelSerializer):
             "schemas",
             "prefix",
             "revenue_analytics_config",
+            "user_access_level",
         ]
 
     """
@@ -204,6 +210,7 @@ class ExternalDataSourceSerializers(serializers.ModelSerializer):
             "linkedin_ads_integration_id",
             # meta ads
             "meta_ads_integration_id",
+            "sync_lookback_days",
             # reddit ads
             "reddit_integration_id",
             # salesforce
@@ -345,12 +352,13 @@ class SimpleExternalDataSourceSerializers(serializers.ModelSerializer):
         read_only_fields = ["id", "created_by", "created_at", "status", "source_type"]
 
 
-class ExternalDataSourceViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
+@extend_schema(tags=[ProductKey.DATA_WAREHOUSE])
+class ExternalDataSourceViewSet(TeamAndOrgViewSetMixin, AccessControlViewSetMixin, viewsets.ModelViewSet):
     """
     Create, Read, Update and Delete External data Sources.
     """
 
-    scope_object = "INTERNAL"
+    scope_object = "external_data_source"
     queryset = ExternalDataSource.objects.all()
     serializer_class = ExternalDataSourceSerializers
     filter_backends = [filters.SearchFilter]
@@ -398,6 +406,7 @@ class ExternalDataSourceViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
 
     def create(self, request: Request, *args: Any, **kwargs: Any) -> Response:
         prefix = request.data.get("prefix", None)
+        description = request.data.get("description", None)
         source_type = request.data["source_type"]
 
         # Validate prefix characters
@@ -447,6 +456,7 @@ class ExternalDataSourceViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
             source_type=source_type_model,
             job_inputs=source_config.to_dict(),
             prefix=prefix,
+            description=description,
         )
 
         source_schemas = source.get_schemas(source_config, self.team_id)
@@ -742,6 +752,7 @@ class ExternalDataSourceViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
 class ExternalDataSourceContext(ActivityContextBase):
     source_type: str
     prefix: str | None
+    description: str | None
     created_by_user_id: str | None
     created_by_user_email: str | None
     created_by_user_name: str | None
@@ -765,6 +776,7 @@ def handle_external_data_source_change(
     context = ExternalDataSourceContext(
         source_type=external_data_source.source_type or "",
         prefix=external_data_source.prefix,
+        description=external_data_source.description,
         created_by_user_id=created_by_user_id,
         created_by_user_email=created_by_user_email,
         created_by_user_name=created_by_user_name,

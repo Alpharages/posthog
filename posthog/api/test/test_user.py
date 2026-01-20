@@ -22,7 +22,7 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 from rest_framework import status
 
 from posthog.api.email_verification import email_verification_token_generator
-from posthog.api.test.test_oauth import generate_rsa_key
+from posthog.api.oauth.test_dcr import generate_rsa_key
 from posthog.models import Dashboard, Team, User
 from posthog.models.instance_setting import set_instance_setting
 from posthog.models.oauth import OAuthAccessToken, OAuthApplication
@@ -982,6 +982,26 @@ class TestUserAPI(APIBaseTest):
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password(self.CONFIG_PASSWORD))
 
+    @patch("posthog.api.user.send_password_changed_email.delay")
+    def test_user_without_password_can_set_password(self, mock_send_email):
+        # Create a user without a password (e.g., SSO user)
+        self.user.set_unusable_password()
+        self.user.save()
+
+        # Re-authenticate with force_login since password is now unusable
+        self.client.force_login(self.user)
+
+        # User should be able to set password without providing current_password
+        # Use a strong password that meets validation requirements
+        new_password = "NewSecurePassword123!"
+        response = self.client.patch("/api/users/@me/", {"password": new_password})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Password should be set
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.has_usable_password())
+        self.assertTrue(self.user.check_password(new_password))
+
     def test_unauthenticated_user_cannot_update_anything(self):
         self.client.logout()
         response = self.client.patch(
@@ -1337,9 +1357,9 @@ class TestUserAPI(APIBaseTest):
 
         for field, value in fields.items():
             response = self.client.patch("/api/users/@me/", {field: value})
-            assert (
-                response.json()[field] == initial_user[field]
-            ), f"Updating field '{field}' to '{value}' worked when it shouldn't! Was {initial_user[field]} and is now {response.json()[field]}"
+            assert response.json()[field] == initial_user[field], (
+                f"Updating field '{field}' to '{value}' worked when it shouldn't! Was {initial_user[field]} and is now {response.json()[field]}"
+            )
 
     def test_can_update_notification_settings(self):
         response = self.client.patch(
@@ -1351,6 +1371,7 @@ class TestUserAPI(APIBaseTest):
                     "error_tracking_issue_assigned": False,
                     "project_weekly_digest_disabled": {123: True},
                     "all_weekly_digest_disabled": True,
+                    "data_pipeline_error_threshold": 0.1,
                 }
             },
         )
@@ -1365,6 +1386,8 @@ class TestUserAPI(APIBaseTest):
                 "project_weekly_digest_disabled": {"123": True},  # Note: JSON converts int keys to strings
                 "all_weekly_digest_disabled": True,
                 "error_tracking_issue_assigned": False,
+                "data_pipeline_error_threshold": 0.1,
+                "project_api_key_exposed": True,
             },
         )
 
@@ -1377,6 +1400,8 @@ class TestUserAPI(APIBaseTest):
                 "project_weekly_digest_disabled": {"123": True},
                 "all_weekly_digest_disabled": True,
                 "error_tracking_issue_assigned": False,
+                "data_pipeline_error_threshold": 0.1,
+                "project_api_key_exposed": True,
             },
         )
 
@@ -1443,6 +1468,8 @@ class TestUserAPI(APIBaseTest):
                 "project_weekly_digest_disabled": {},  # Default value
                 "all_weekly_digest_disabled": True,
                 "error_tracking_issue_assigned": True,  # Default value
+                "data_pipeline_error_threshold": 0.0,  # Default value
+                "project_api_key_exposed": True,  # Default value
             },
         )
 
@@ -1859,6 +1886,9 @@ class TestUserTwoFactor(APIBaseTest):
                 "is_enabled": False,
                 "backup_codes": [],
                 "method": None,
+                "has_passkeys": False,
+                "has_totp": False,
+                "passkeys_enabled_for_2fa": False,
             },
         )
 
@@ -1881,6 +1911,143 @@ class TestUserTwoFactor(APIBaseTest):
                 "is_enabled": True,
                 "backup_codes": ["123456", "789012"],
                 "method": "TOTP",
+                "has_passkeys": False,
+                "has_totp": True,
+                "passkeys_enabled_for_2fa": False,
+            },
+        )
+
+    def test_two_factor_status_with_passkeys_only(self):
+        """Test two_factor_status when user has passkeys but no TOTP"""
+        from posthog.models.webauthn_credential import WebauthnCredential
+
+        WebauthnCredential.objects.create(
+            user=self.user,
+            credential_id=b"test-credential-id",
+            label="Test Passkey",
+            public_key=b"test-public-key",
+            algorithm=-7,
+            counter=0,
+            transports=["internal"],
+            verified=True,
+        )
+        # Enable passkeys for 2FA
+        self.user.passkeys_enabled_for_2fa = True
+        self.user.save()
+
+        response = self.client.get(f"/api/users/@me/two_factor_status/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.json(),
+            {
+                "is_enabled": True,
+                "backup_codes": [],
+                "method": "passkey",
+                "has_passkeys": True,
+                "has_totp": False,
+                "passkeys_enabled_for_2fa": True,
+            },
+        )
+
+    def test_two_factor_status_with_both_totp_and_passkeys(self):
+        """Test two_factor_status when user has both TOTP and passkeys (TOTP takes precedence)"""
+        from posthog.models.webauthn_credential import WebauthnCredential
+
+        # Create TOTP device
+        totp_device = TOTPDevice.objects.create(user=self.user, name="default")
+
+        # Create passkey
+        WebauthnCredential.objects.create(
+            user=self.user,
+            credential_id=b"test-credential-id",
+            label="Test Passkey",
+            public_key=b"test-public-key",
+            algorithm=-7,
+            counter=0,
+            transports=["internal"],
+            verified=True,
+        )
+        # Enable passkeys for 2FA
+        self.user.passkeys_enabled_for_2fa = True
+        self.user.save()
+
+        # Create backup codes
+        static_device = StaticDevice.objects.create(user=self.user, name="backup")
+        static_device.token_set.create(token="123456")
+
+        with patch("posthog.api.user.default_device", return_value=totp_device):
+            response = self.client.get(f"/api/users/@me/two_factor_status/")
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(
+                response.json(),
+                {
+                    "is_enabled": True,
+                    "backup_codes": ["123456"],
+                    "method": "TOTP",
+                    "has_passkeys": True,
+                    "has_totp": True,
+                    "passkeys_enabled_for_2fa": True,
+                },
+            )
+
+    def test_two_factor_status_with_unverified_passkeys(self):
+        """Test two_factor_status when user has unverified passkeys (should not count as 2FA)"""
+        from posthog.models.webauthn_credential import WebauthnCredential
+
+        WebauthnCredential.objects.create(
+            user=self.user,
+            credential_id=b"test-credential-id",
+            label="Test Passkey",
+            public_key=b"test-public-key",
+            algorithm=-7,
+            counter=0,
+            transports=["internal"],
+            verified=False,  # Unverified
+        )
+
+        response = self.client.get(f"/api/users/@me/two_factor_status/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.json(),
+            {
+                "is_enabled": False,
+                "backup_codes": [],
+                "method": None,
+                "has_passkeys": False,
+                "has_totp": False,
+                "passkeys_enabled_for_2fa": False,
+            },
+        )
+
+    def test_two_factor_status_with_passkeys_disabled_for_2fa(self):
+        """Test two_factor_status when user has passkeys but passkeys_enabled_for_2fa is False"""
+        from posthog.models.webauthn_credential import WebauthnCredential
+
+        WebauthnCredential.objects.create(
+            user=self.user,
+            credential_id=b"test-credential-id",
+            label="Test Passkey",
+            public_key=b"test-public-key",
+            algorithm=-7,
+            counter=0,
+            transports=["internal"],
+            verified=True,
+        )
+        # Ensure passkeys_enabled_for_2fa is False (default)
+        self.user.passkeys_enabled_for_2fa = False
+        self.user.save()
+
+        response = self.client.get(f"/api/users/@me/two_factor_status/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.json(),
+            {
+                "is_enabled": False,
+                "backup_codes": [],
+                "method": None,
+                "has_passkeys": True,
+                "has_totp": False,
+                "passkeys_enabled_for_2fa": False,
             },
         )
 
@@ -1894,7 +2061,7 @@ class TestUserTwoFactor(APIBaseTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         backup_codes = response.json()["backup_codes"]
-        self.assertEqual(len(backup_codes), 5)  # Verify 5 backup codes are generated
+        self.assertEqual(len(backup_codes), 10)  # Verify 10 backup codes are generated
 
         # Verify codes are stored in database
         static_device = StaticDevice.objects.get(user=self.user)
