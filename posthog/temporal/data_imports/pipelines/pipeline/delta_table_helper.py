@@ -56,8 +56,11 @@ class DeltaTableHelper:
                 "endpoint_url": settings.OBJECT_STORAGE_ENDPOINT,
                 "region_name": settings.DATAWAREHOUSE_LOCAL_BUCKET_REGION,
                 "AWS_DEFAULT_REGION": settings.DATAWAREHOUSE_LOCAL_BUCKET_REGION,
+                "AWS_REGION": settings.DATAWAREHOUSE_LOCAL_BUCKET_REGION,
                 "AWS_ALLOW_HTTP": "true",
                 "AWS_S3_ALLOW_UNSAFE_RENAME": "true",
+                "AWS_VIRTUAL_HOSTED_STYLE_REQUEST": "false",
+                "AWS_S3_LOCKING_PROVIDER": "dynamodb",
             }
 
         return {
