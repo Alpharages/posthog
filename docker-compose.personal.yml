@@ -312,6 +312,10 @@ services:
         environment:
             SITE_URL: https://$DOMAIN
             SECRET_KEY: $POSTHOG_SECRET
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
+            REDIS_URL: 'redis://redis:6379/'
+            DATA_WAREHOUSE_REDIS_HOST: 'redis'
+            DATA_WAREHOUSE_REDIS_PORT: '6379'
         depends_on:
             - db
             - redis
