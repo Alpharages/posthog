@@ -1,3 +1,4 @@
+import json
 import uuid
 import dataclasses
 from typing import Any, Optional
@@ -51,6 +52,18 @@ class ImportDataActivityInputs:
 
 def _trim_source_job_inputs(source: ExternalDataSource) -> None:
     if not source.job_inputs:
+        return
+
+    # Handle cases where job_inputs might be a JSON string instead of a dict
+    if isinstance(source.job_inputs, str):
+        try:
+            source.job_inputs = json.loads(source.job_inputs)
+        except json.JSONDecodeError:
+            # If it's not valid JSON, we can't process it
+            return
+
+    if not isinstance(source.job_inputs, dict):
+        # If it's not a dict after deserialization, we can't process it
         return
 
     did_update_inputs = False
