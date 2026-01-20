@@ -12,10 +12,17 @@ export POSTHOG_APP_TAG="${POSTHOG_APP_TAG:-latest}"
 # Check if .env file already exists
 if [ -f ".env" ]; then
     echo "📄 Found existing .env file, loading configuration..."
-    # Source existing .env file to preserve secrets
-    set -a
-    source .env
-    set +a
+    # Safely source existing .env file to preserve secrets
+    # Use grep to filter out comments and empty lines, then export each variable
+    while IFS='=' read -r key value; do
+        # Skip empty lines and comments
+        [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
+        # Remove quotes from value if present
+        value="${value%\"}"
+        value="${value#\"}"
+        # Export the variable
+        export "$key=$value"
+    done < <(grep -v '^#' .env | grep -v '^$')
     echo "✓ Using existing secrets and configuration"
 else
     echo "🔐 Generating new secrets..."
@@ -115,9 +122,11 @@ then
     export REGISTRY_URL="posthog/posthog"
 fi
 
-# Write .env file (update with current values)
-echo "📝 Writing .env file..."
-cat > .env <<EOF
+# Update .env file with deployment-specific variables
+echo "📝 Updating .env file with deployment variables..."
+
+# Create a temporary file with deployment variables
+cat > .env.deploy <<EOF
 POSTHOG_SECRET=$POSTHOG_SECRET
 ENCRYPTION_SALT_KEYS=$ENCRYPTION_SALT_KEYS
 DOMAIN=$DOMAIN
@@ -127,18 +136,60 @@ CADDY_TLS_BLOCK=$TLS_BLOCK
 CADDY_HOST="$DOMAIN, http://, https://"
 POSTHOG_APP_TAG=$POSTHOG_APP_TAG
 EOF
+
+# If .env exists, back it up and merge deployment variables
+if [ -f ".env" ] && [ -s ".env" ]; then
+    # Backup existing .env
+    cp .env .env.backup
+    # Remove deployment variables from existing .env if they exist
+    grep -v '^POSTHOG_SECRET=' .env | \
+    grep -v '^ENCRYPTION_SALT_KEYS=' | \
+    grep -v '^DOMAIN=' | \
+    grep -v '^TLS_BLOCK=' | \
+    grep -v '^REGISTRY_URL=' | \
+    grep -v '^CADDY_TLS_BLOCK=' | \
+    grep -v '^CADDY_HOST=' | \
+    grep -v '^POSTHOG_APP_TAG=' > .env.user || true
+    # Combine user config with deployment config
+    cat .env.user .env.deploy > .env
+    rm .env.user
+else
+    # No existing .env, just use deployment variables
+    mv .env.deploy .env
+fi
+
+rm -f .env.deploy
 echo "✓ .env file updated"
 
 # Download GeoLite2-City.mmdb if it doesn't exist
-echo "Downloading GeoIP database file"
-apt-get update &&
-apt-get install -y --no-install-recommends curl ca-certificates brotli &&
-mkdir -p ./share &&
+echo "Preparing GeoIP database..."
+mkdir -p ./share
 if [ ! -f ./share/GeoLite2-City.mmdb ]; then
-    curl -L 'https://mmdbcdn.posthog.net/' --http1.1 | brotli --decompress --output=./share/GeoLite2-City.mmdb &&
-    echo '{"date": "'"$(date +%Y-%m-%d)"'"}' > ./share/GeoLite2-City.json;
-    chmod 644 ./share/GeoLite2-City.mmdb &&
-    chmod 644 ./share/GeoLite2-City.json
+    echo "Downloading GeoIP database file..."
+    # Check if we're on Linux and install brotli if needed
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if ! command -v brotli &> /dev/null; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends curl ca-certificates brotli
+        fi
+    fi
+    
+    # Download and decompress
+    if command -v brotli &> /dev/null; then
+        curl -L 'https://mmdbcdn.posthog.net/' --http1.1 | brotli --decompress --output=./share/GeoLite2-City.mmdb
+    else
+        echo "⚠️  Warning: brotli not found. Skipping GeoIP database download."
+        echo "    You may need to download it manually later."
+    fi
+    
+    if [ -f ./share/GeoLite2-City.mmdb ]; then
+        echo '{"date": "'"$(date +%Y-%m-%d)"'"}' > ./share/GeoLite2-City.json
+        chmod 644 ./share/GeoLite2-City.mmdb
+        chmod 644 ./share/GeoLite2-City.json
+        echo "✓ GeoIP database downloaded"
+    fi
+else
+    echo "✓ GeoIP database already exists"
 fi
 
 # write entrypoint
