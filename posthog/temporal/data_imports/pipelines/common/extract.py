@@ -54,17 +54,33 @@ def build_non_retryable_errors_redis_key(team_id: int, source_id: str, run_id: s
 
 
 def trim_source_job_inputs(source: "ExternalDataSource") -> None:
+    import json
+    
     if not source.job_inputs:
         return
 
+    # Handle case where job_inputs is a JSON string
+    job_inputs = source.job_inputs
+    if isinstance(job_inputs, str):
+        try:
+            job_inputs = json.loads(job_inputs)
+        except json.JSONDecodeError:
+            # If it's not valid JSON, skip trimming
+            return
+    
+    if not isinstance(job_inputs, dict):
+        # If it's neither a dict nor a valid JSON string, skip trimming
+        return
+
     did_update_inputs = False
-    for key, value in source.job_inputs.items():
+    for key, value in job_inputs.items():
         if isinstance(value, str):
             if value.startswith(" ") or value.endswith(" "):
-                source.job_inputs[key] = value.strip()
+                job_inputs[key] = value.strip()
                 did_update_inputs = True
 
     if did_update_inputs:
+        source.job_inputs = job_inputs
         source.save()
 
 
