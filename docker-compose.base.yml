@@ -116,7 +116,7 @@ services:
             POSTGRES_DB: posthog
             POSTGRES_PASSWORD: posthog
         healthcheck:
-            test: ['CMD-SHELL', 'pg_isready -U posthog']
+            test: [ 'CMD-SHELL', 'pg_isready -U posthog' ]
             interval: 5s
             timeout: 30s
         volumes:
@@ -127,7 +127,7 @@ services:
         restart: on-failure
         command: redis-server --maxmemory-policy allkeys-lru --maxmemory 200mb
         healthcheck:
-            test: ['CMD', 'redis-cli', 'ping']
+            test: [ 'CMD', 'redis-cli', 'ping' ]
             interval: 3s
             timeout: 10s
             retries: 10
@@ -137,7 +137,7 @@ services:
         restart: on-failure
         command: redis-server --maxmemory-policy allkeys-lru --maxmemory 200mb
         healthcheck:
-            test: ['CMD', 'redis-cli', 'ping']
+            test: [ 'CMD', 'redis-cli', 'ping' ]
             interval: 3s
             timeout: 10s
             retries: 10
@@ -204,12 +204,12 @@ services:
             MINIO_ROOT_USER: object_storage_root_user
             MINIO_ROOT_PASSWORD: object_storage_root_password
         entrypoint: sh
-        command: -c 'mkdir -p /data/posthog /data/ducklake-dev /data/ai-blobs && minio server --address ":19000" --console-address ":19001" /data' # create the 'posthog', 'ducklake-dev', and 'ai-blobs' buckets before starting the service
+        command: -c 'mkdir -p /data/posthog /data/ducklake-dev /data/ai-blobs /data/data-warehouse && minio server --address ":19000" --console-address ":19001" /data' # create the 'posthog', 'ducklake-dev', 'ai-blobs', and 'data-warehouse' buckets before starting the service
 
     objectstorage-azure:
         image: mcr.microsoft.com/azure-storage/azurite:3.35.0
         restart: on-failure
-        profiles: ['batch-exports']
+        profiles: [ 'batch-exports' ]
         command: azurite-blob --blobHost 0.0.0.0 --blobPort 10000 --location /data
         ports:
             - '10000:10000'
@@ -402,11 +402,7 @@ services:
 
     migrate:
         <<: *worker
-        command: sh -c "
-            python manage.py migrate
-            && python manage.py migrate_clickhouse
-            && python manage.py run_async_migrations
-            "
+        command: sh -c " python manage.py migrate && python manage.py migrate_clickhouse && python manage.py run_async_migrations "
         restart: 'no'
         deploy:
             replicas: 0
@@ -504,7 +500,7 @@ services:
     otel-collector:
         image: otel/opentelemetry-collector-contrib:0.142.0
         container_name: otel-collector-local
-        command: [--config=/etc/otel-collector-config.yaml]
+        command: [ --config=/etc/otel-collector-config.yaml ]
         user: '0:0' # have to run as root to read the docker logs
         volumes:
             - ./otel-collector-config.dev.yaml:/etc/otel-collector-config.yaml
@@ -561,24 +557,24 @@ services:
             - /bin/sh
             - -c
             - |
-                /usr/bin/weed "$$@" &
-                WEED_PID=$$!
-                echo "Waiting for SeaweedFS to initialize..."
-                while true; do
-                    sleep 5
-                    echo "Checking if posthog bucket exists..."
-                    if echo "s3.bucket.list" | /usr/bin/weed shell -master=localhost:9333 2>&1 | grep -q "posthog"; then
-                        echo "Bucket posthog exists!"
-                        break
-                    fi
-                    echo "Bucket not found, attempting to create..."
-                    echo "s3.bucket.create -name posthog" | /usr/bin/weed shell -master=localhost:9333 2>&1 || true
-                    echo "Retrying in 5s..."
-                done
-                echo "SeaweedFS ready with posthog bucket"
-                wait $$WEED_PID
+              /usr/bin/weed "$$@" &
+              WEED_PID=$$!
+              echo "Waiting for SeaweedFS to initialize..."
+              while true; do
+                  sleep 5
+                  echo "Checking if posthog bucket exists..."
+                  if echo "s3.bucket.list" | /usr/bin/weed shell -master=localhost:9333 2>&1 | grep -q "posthog"; then
+                      echo "Bucket posthog exists!"
+                      break
+                  fi
+                  echo "Bucket not found, attempting to create..."
+                  echo "s3.bucket.create -name posthog" | /usr/bin/weed shell -master=localhost:9333 2>&1 || true
+                  echo "Retrying in 5s..."
+              done
+              echo "SeaweedFS ready with posthog bucket"
+              wait $$WEED_PID
             - --
-        command: ['server', '-s3', '-s3.port=8333', '-dir=/data']
+        command: [ 'server', '-s3', '-s3.port=8333', '-dir=/data' ]
 
 networks:
     otel_network:
