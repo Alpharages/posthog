@@ -1,4 +1,4 @@
-debug: false
+debug: true
 kafka:
     brokers: 'kafka:9092'
     topic: 'events_plugin_ingestion'

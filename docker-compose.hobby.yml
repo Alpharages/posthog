@@ -89,6 +89,7 @@ services:
             SESSION_RECORDING_V2_S3_SECRET_ACCESS_KEY: 'any'
             OBJECT_STORAGE_ENABLED: true
             ENCRYPTION_SALT_KEYS: $ENCRYPTION_SALT_KEYS
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
     web:
         extends:
@@ -110,6 +111,7 @@ services:
             SESSION_RECORDING_V2_S3_ENDPOINT: http://seaweedfs:8333
             OBJECT_STORAGE_ENABLED: true
             ENCRYPTION_SALT_KEYS: $ENCRYPTION_SALT_KEYS
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
             OTEL_SERVICE_NAME: 'posthog'
             OTEL_EXPORTER_OTLP_ENDPOINT: ''
             OTEL_SDK_DISABLED: 'true'
@@ -147,6 +149,7 @@ services:
             CYCLOTRON_DATABASE_URL: 'postgres://posthog:posthog@db:5432/posthog'
             PERSONS_DATABASE_URL: 'postgres://posthog:posthog@db:5432/posthog'
             BEHAVIORAL_COHORTS_DATABASE_URL: 'postgres://posthog:posthog@db:5432/posthog'
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
             OTEL_EXPORTER_OTLP_ENDPOINT: ''
         depends_on:
             - db
@@ -262,6 +265,7 @@ services:
         environment:
             DATABASE_URL: 'postgres://posthog:posthog@db:5432/posthog'
             KAFKA_HOSTS: 'kafka:9092'
+            KAFKA_TLS: 'false'
         depends_on:
             db:
                 condition: service_healthy
@@ -274,6 +278,8 @@ services:
         extends:
             file: docker-compose.base.yml
             service: capture
+        environment:
+            KAFKA_TLS: 'false'
 
     replay-capture:
         build:
@@ -281,6 +287,8 @@ services:
         extends:
             file: docker-compose.base.yml
             service: replay-capture
+        environment:
+            KAFKA_TLS: 'false'
 
     property-defs-rs:
         build:
@@ -288,6 +296,8 @@ services:
         extends:
             file: docker-compose.base.yml
             service: property-defs-rs
+        environment:
+            KAFKA_TLS: 'false'
 
     livestream:
         extends:
@@ -306,6 +316,8 @@ services:
         extends:
             file: docker-compose.base.yml
             service: feature-flags
+        environment:
+            KAFKA_TLS: 'false'
         depends_on:
             - db
             - redis
