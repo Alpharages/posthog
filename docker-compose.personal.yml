@@ -78,6 +78,9 @@ services:
         extends:
             file: docker-compose.base.yml
             service: worker
+        build:
+            context: ./posthog
+            dockerfile: Dockerfile
         environment:
             SITE_URL: https://$DOMAIN
             SECRET_KEY: $POSTHOG_SECRET
@@ -107,6 +110,9 @@ services:
         extends:
             file: docker-compose.base.yml
             service: web
+        build:
+            context: ./posthog
+            dockerfile: Dockerfile
         command: /compose/start
         volumes:
             - ./compose:/compose
@@ -142,6 +148,9 @@ services:
         extends:
             file: docker-compose.base.yml
             service: plugins
+        build:
+            context: ./posthog
+            dockerfile: Dockerfile
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
         environment:
             SITE_URL: https://$DOMAIN
@@ -227,6 +236,9 @@ services:
         extends:
             file: docker-compose.base.yml
             service: asyncmigrationscheck
+        build:
+            context: ./posthog
+            dockerfile: Dockerfile
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
         environment:
             SITE_URL: https://$DOMAIN
@@ -270,6 +282,9 @@ services:
         extends:
             file: docker-compose.base.yml
             service: temporal-django-worker
+        build:
+            context: ./posthog
+            dockerfile: Dockerfile
         volumes:
             - ./compose:/compose
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
@@ -290,6 +305,9 @@ services:
         extends:
             file: docker-compose.base.yml
             service: temporal-django-worker
+        build:
+            context: ./posthog
+            dockerfile: Dockerfile
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
         environment:
             SITE_URL: https://$DOMAIN

@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+
+set -e
+
+export DEBIAN_FRONTEND=noninteractive
+
+# Automatically restart without asking.
+# this gets around needrestart command halting for user input
+export RESTART_MODE=l
+export POSTHOG_APP_TAG="${POSTHOG_APP_TAG:-latest}"
+
+# Check if .env file already exists
+if [ -f ".env" ]; then
+    echo "📄 Found existing .env file, loading configuration..."
+    # Source existing .env file to preserve secrets
+    set -a
+    source .env
+    set +a
+    echo "✓ Using existing secrets and configuration"
+else
+    echo "🔐 Generating new secrets..."
+    POSTHOG_SECRET=$(head -c 28 /dev/urandom | sha224sum -b | head -c 56)
+    export POSTHOG_SECRET
+
+    ENCRYPTION_SALT_KEYS=$(openssl rand -hex 16)
+    export ENCRYPTION_SALT_KEYS
+    echo "✓ New secrets generated"
+fi
+
+# Talk to the user
+echo ""
+echo "Welcome to the PostHog Personal Deployment installer 🦔"
+echo ""
+echo "⚠️  You REALLY need 8GB or more of memory to run this stack ⚠️"
+echo ""
+echo "This script assumes you have already cloned the PostHog repository locally."
+echo ""
+
+if [ -n "$1" ]
+then
+    export POSTHOG_APP_TAG=$1
+else
+    echo "What version of PostHog would you like to install? (We default to 'latest')"
+    echo "You can check out available versions here: https://hub.docker.com/r/posthog/posthog/tags"
+    read -r POSTHOG_APP_TAG_READ
+    if [ -z "$POSTHOG_APP_TAG_READ" ]
+    then
+        echo "Using default and installing $POSTHOG_APP_TAG"
+    else
+        export POSTHOG_APP_TAG=$POSTHOG_APP_TAG_READ
+        echo "Using provided tag: $POSTHOG_APP_TAG"
+    fi
+fi
+
+echo ""
+if [ -n "$2" ]
+then
+    export DOMAIN=$2
+else
+    # Use existing DOMAIN if available, otherwise prompt
+    if [ -z "$DOMAIN" ]; then
+        echo "Let's get the exact domain PostHog will be installed on"
+        echo "Make sure that you have a Host A DNS record pointing to this instance!"
+        echo "This will be used for TLS 🔐"
+        echo "ie: test.posthog.net (NOT an IP address)"
+        read -r DOMAIN
+        export DOMAIN=$DOMAIN
+    else
+        echo "Using existing domain: $DOMAIN"
+    fi
+fi
+
+echo "Ok we'll set up certs for https://$DOMAIN"
+echo ""
+echo "We will need sudo access so the next question is for you to give us superuser access"
+echo "Please enter your sudo password now:"
+sudo echo ""
+
+echo "Thanks! 🙏"
+echo ""
+echo "Ok! We'll take it from here 🚀"
+
+echo "Making sure any stack that might exist is stopped"
+sudo -E docker-compose -f docker-compose.yml stop &> /dev/null || true
+
+# send log of this install for continued support!
+curl -o /dev/null -L --header "Content-Type: application/json" -d "{
+    \"api_key\": \"sTMFPsFhdP1Ssg\",
+    \"distinct_id\": \"${DOMAIN}\",
+    \"properties\": {\"domain\": \"${DOMAIN}\"},
+    \"type\": \"capture\",
+    \"event\": \"magic_curl_install_start\"
+}" https://us.i.posthog.com/batch/ &> /dev/null
+
+# update apt cache
+echo "Grabbing latest apt caches"
+sudo apt update
+
+# Verify we're in the posthog repository
+if [ ! -f "docker-compose.personal.yml" ]; then
+    echo "❌ Error: docker-compose.personal.yml not found in current directory"
+    echo "Please run this script from the root of your PostHog repository"
+    exit 1
+fi
+
+echo "✓ Found docker-compose.personal.yml"
+
+if [ -n "$3" ]
+then
+    export TLS_BLOCK="acme_ca https://acme-staging-v02.api.letsencrypt.org/directory"
+fi
+
+if [ "$REGISTRY_URL" == "" ]
+then
+    export REGISTRY_URL="posthog/posthog"
+fi
+
+# Write .env file (update with current values)
+echo "📝 Writing .env file..."
+cat > .env <<EOF
+POSTHOG_SECRET=$POSTHOG_SECRET
+ENCRYPTION_SALT_KEYS=$ENCRYPTION_SALT_KEYS
+DOMAIN=$DOMAIN
+TLS_BLOCK=$TLS_BLOCK
+REGISTRY_URL=$REGISTRY_URL
+CADDY_TLS_BLOCK=$TLS_BLOCK
+CADDY_HOST="$DOMAIN, http://, https://"
+POSTHOG_APP_TAG=$POSTHOG_APP_TAG
+EOF
+echo "✓ .env file updated"
+
+# Download GeoLite2-City.mmdb if it doesn't exist
+echo "Downloading GeoIP database file"
+apt-get update &&
+apt-get install -y --no-install-recommends curl ca-certificates brotli &&
+mkdir -p ./share &&
+if [ ! -f ./share/GeoLite2-City.mmdb ]; then
+    curl -L 'https://mmdbcdn.posthog.net/' --http1.1 | brotli --decompress --output=./share/GeoLite2-City.mmdb &&
+    echo '{"date": "'"$(date +%Y-%m-%d)"'"}' > ./share/GeoLite2-City.json;
+    chmod 644 ./share/GeoLite2-City.mmdb &&
+    chmod 644 ./share/GeoLite2-City.json
+fi
+
+# write entrypoint
+# NOTE: this is duplicated in bin/upgrade-hobby, so if you change it here,
+# change it there too.
+rm -rf compose
+mkdir -p compose
+cat > compose/start <<EOF
+#!/bin/bash
+./compose/wait
+./bin/migrate
+./bin/docker-server
+EOF
+chmod +x compose/start
+
+cat > compose/temporal-django-worker <<EOF
+#!/bin/bash
+./bin/temporal-django-worker
+EOF
+chmod +x compose/temporal-django-worker
+
+# write wait script
+cat > compose/wait <<EOF
+#!/usr/bin/env python3
+
+import socket
+import time
+
+def loop():
+    print("Waiting for ClickHouse and Postgres to be ready")
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect(('clickhouse', 9000))
+        print("Clickhouse is ready")
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.connect(('db', 5432))
+        print("Postgres is ready")
+    except ConnectionRefusedError as e:
+        time.sleep(5)
+        loop()
+
+loop()
+EOF
+chmod +x compose/wait
+
+# setup docker
+if ! command -v docker &> /dev/null; then
+    echo "Docker is not installed. Setting up Docker."
+    sudo apt install -y apt-transport-https ca-certificates curl software-properties-common
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo -E apt-key add -
+    sudo add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu jammy stable"
+    sudo apt update
+    sudo apt-cache policy docker-ce
+    sudo apt install -y docker-ce containerd.io=2.2.0-2~ubuntu.22.04~jammy
+else
+    echo "Docker is already installed. Skipping installation."
+fi
+
+# setup docker-compose
+echo "Setting up Docker Compose"
+sudo curl -L "https://github.com/docker/compose/releases/download/v2.33.1/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose || true
+sudo chmod +x /usr/local/bin/docker-compose
+
+# enable docker without sudo
+sudo usermod -aG docker "${USER}" || true
+
+# start up the stack
+echo "Configuring Docker Compose...."
+rm -f docker-compose.yml
+cp docker-compose.base.yml docker-compose.base.yml
+cp docker-compose.personal.yml docker-compose.yml
+
+echo "Building Docker images from local source code..."
+echo "This may take 10-20 minutes on first build..."
+
+# Retry docker-compose up with --build up to 3 times
+for attempt in 1 2 3; do
+    echo "Building and starting stack (attempt $attempt/3)..."
+    if sudo -E docker-compose -f docker-compose.yml up -d --build; then
+        echo "Stack built and started successfully"
+        break
+    else
+        if [ $attempt -lt 3 ]; then
+            echo "Failed to build/start stack, waiting 30s before retry..."
+            sleep 30
+        else
+            echo "Failed to build/start stack after 3 attempts"
+            exit 1
+        fi
+    fi
+done
+
+if [ -z "$SKIP_HEALTH_CHECK" ]; then
+    # Normal hobby deployment: wait for health check
+    echo "We will need to wait ~5-10 minutes for things to settle down, migrations to finish, and TLS certs to be issued"
+    echo ""
+    echo "⏳ Waiting for PostHog web to boot (this will take a few minutes)"
+    echo "   (timeout after 10 minutes if app doesn't start)"
+    
+    # Wait for health check with 600 second timeout
+    # Track the start time to measure actual wait time
+    HEALTH_START=$(date +%s)
+    # shellcheck disable=SC2016 # Single quotes intentional - %{http_code} is curl format string, not shell variable
+    if timeout 600 bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost/_health)" != "200" ]]; do sleep 5; done'; then
+        HEALTH_END=$(date +%s)
+        HEALTH_DURATION=$((HEALTH_END - HEALTH_START))
+        echo "⌛️ PostHog looks up! (after ${HEALTH_DURATION} seconds)"
+        echo ""
+        echo "🎉🎉🎉  Done! 🎉🎉🎉"
+        # send log of this install for continued support!
+        curl -o /dev/null -L --header "Content-Type: application/json" -d "{
+            \"api_key\": \"sTMFPsFhdP1Ssg\",
+            \"distinct_id\": \"${DOMAIN}\",
+            \"properties\": {\"domain\": \"${DOMAIN}\"},
+            \"type\": \"capture\",
+            \"event\": \"magic_curl_install_complete\"
+        }" https://us.i.posthog.com/batch/ &> /dev/null
+    else
+        HEALTH_EXIT=$?
+        echo ""
+        if [ $HEALTH_EXIT -eq 124 ]; then
+            echo "❌ Health check timed out after 10 minutes"
+            echo "   The application did not start within the expected timeframe"
+        else
+            echo "❌ Health check failed with exit code: $HEALTH_EXIT"
+        fi
+        echo ""
+        echo "Please check the logs with 'docker-compose logs' for more details."
+        echo "Common issues:"
+        echo "  - Docker image pull failed: 'docker logs <container>'"
+        echo "  - Database migration stuck: 'docker-compose logs db clickhouse'"
+        echo "  - Insufficient memory: 'free -h' and 'top'"
+        exit 1
+    fi
+else
+    # CI mode: skip health check, exit immediately after docker-compose up
+    echo "⏭️  Skipping health check (SKIP_HEALTH_CHECK is set)"
+    echo "Stack started, containers are running in background"
+fi
+
+echo ""
+echo "To stop the stack run 'docker-compose stop'"
+echo "To start the stack again run 'docker-compose start'"
+echo "To restart the stack run 'docker-compose restart'"
+echo ""
+echo "PostHog will be up at the location you provided!"
+echo "https://${DOMAIN}"
+echo ""
+echo "It's dangerous to go alone! Take this: 🦔"
