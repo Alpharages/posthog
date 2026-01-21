@@ -271,8 +271,8 @@ services:
                 condition: service_started
             db:
                 condition: service_healthy
-    temporal-worker:
-        command: /compose/temporal-worker
+    temporal-django-worker:
+        command: /compose/temporal-django-worker
         extends:
             file: docker-compose.base.yml
             service: temporal-django-worker
@@ -281,6 +281,27 @@ services:
             dockerfile: Dockerfile
         volumes:
             - ./compose:/compose
+        image: $REGISTRY_URL:$POSTHOG_APP_TAG
+        environment:
+            SITE_URL: https://$DOMAIN
+            SECRET_KEY: $POSTHOG_SECRET
+        depends_on:
+            - db
+            - redis
+            - clickhouse
+            - kafka
+            - objectstorage
+            - seaweedfs
+            - temporal
+
+    temporal-data-warehouse-worker:
+        command: python3 manage.py start_temporal_worker --task-queue data-warehouse-task-queue
+        extends:
+            file: docker-compose.base.yml
+            service: temporal-django-worker
+        build:
+            context: .
+            dockerfile: Dockerfile
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
         environment:
             SITE_URL: https://$DOMAIN
@@ -302,8 +323,82 @@ services:
             AWS_DEFAULT_REGION: 'us-east-1'
             AWS_ALLOW_HTTP: 'true'
             AWS_EC2_METADATA_DISABLED: 'true'
-            # Enable DEBUG mode to use single development-task-queue for all workflows
-            DEBUG: 'true'
+        depends_on:
+            - db
+            - redis
+            - clickhouse
+            - kafka
+            - objectstorage
+            - seaweedfs
+            - temporal
+
+    temporal-data-modeling-worker:
+        command: python3 manage.py start_temporal_worker --task-queue data-modeling-task-queue
+        extends:
+            file: docker-compose.base.yml
+            service: temporal-django-worker
+        build:
+            context: .
+            dockerfile: Dockerfile
+        image: $REGISTRY_URL:$POSTHOG_APP_TAG
+        environment:
+            SITE_URL: https://$DOMAIN
+            SECRET_KEY: $POSTHOG_SECRET
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
+            REDIS_URL: 'redis://redis:6379/'
+            DATA_WAREHOUSE_REDIS_HOST: 'redis'
+            DATA_WAREHOUSE_REDIS_PORT: '6379'
+            OBJECT_STORAGE_ACCESS_KEY_ID: 'object_storage_root_user'
+            OBJECT_STORAGE_SECRET_ACCESS_KEY: 'object_storage_root_password'
+            OBJECT_STORAGE_ENDPOINT: 'http://objectstorage:19000'
+            OBJECT_STORAGE_ENABLED: 'true'
+            ENCRYPTION_SALT_KEYS: $ENCRYPTION_SALT_KEYS
+            # AWS SDK environment variables for Delta Lake Rust backend
+            AWS_ACCESS_KEY_ID: 'object_storage_root_user'
+            AWS_SECRET_ACCESS_KEY: 'object_storage_root_password'
+            AWS_ENDPOINT_URL: 'http://objectstorage:19000'
+            AWS_REGION: 'us-east-1'
+            AWS_DEFAULT_REGION: 'us-east-1'
+            AWS_ALLOW_HTTP: 'true'
+            AWS_EC2_METADATA_DISABLED: 'true'
+        depends_on:
+            - db
+            - redis
+            - clickhouse
+            - kafka
+            - objectstorage
+            - seaweedfs
+            - temporal
+
+    temporal-ducklake-worker:
+        command: python3 manage.py start_temporal_worker --task-queue ducklake-task-queue
+        extends:
+            file: docker-compose.base.yml
+            service: temporal-django-worker
+        build:
+            context: .
+            dockerfile: Dockerfile
+        image: $REGISTRY_URL:$POSTHOG_APP_TAG
+        environment:
+            SITE_URL: https://$DOMAIN
+            SECRET_KEY: $POSTHOG_SECRET
+            TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
+            REDIS_URL: 'redis://redis:6379/'
+            DATA_WAREHOUSE_REDIS_HOST: 'redis'
+            DATA_WAREHOUSE_REDIS_PORT: '6379'
+            OBJECT_STORAGE_ACCESS_KEY_ID: 'object_storage_root_user'
+            OBJECT_STORAGE_SECRET_ACCESS_KEY: 'object_storage_root_password'
+            OBJECT_STORAGE_ENDPOINT: 'http://objectstorage:19000'
+            OBJECT_STORAGE_ENABLED: 'true'
+            ENCRYPTION_SALT_KEYS: $ENCRYPTION_SALT_KEYS
+            # AWS SDK environment variables for Delta Lake Rust backend
+            AWS_ACCESS_KEY_ID: 'object_storage_root_user'
+            AWS_SECRET_ACCESS_KEY: 'object_storage_root_password'
+            AWS_ENDPOINT_URL: 'http://objectstorage:19000'
+            AWS_REGION: 'us-east-1'
+            AWS_DEFAULT_REGION: 'us-east-1'
+            AWS_ALLOW_HTTP: 'true'
+            AWS_EC2_METADATA_DISABLED: 'true'
         depends_on:
             - db
             - redis
