@@ -323,6 +323,8 @@ services:
             AWS_DEFAULT_REGION: 'us-east-1'
             AWS_ALLOW_HTTP: 'true'
             AWS_EC2_METADATA_DISABLED: 'true'
+            # ClickHouse/chdb S3 configuration for local MinIO
+            S3_USE_SSL: 'false'
         depends_on:
             - db
             - redis
@@ -361,6 +363,8 @@ services:
             AWS_DEFAULT_REGION: 'us-east-1'
             AWS_ALLOW_HTTP: 'true'
             AWS_EC2_METADATA_DISABLED: 'true'
+            # ClickHouse/chdb S3 configuration for local MinIO
+            S3_USE_SSL: 'false'
         depends_on:
             - db
             - redis
@@ -399,6 +403,8 @@ services:
             AWS_DEFAULT_REGION: 'us-east-1'
             AWS_ALLOW_HTTP: 'true'
             AWS_EC2_METADATA_DISABLED: 'true'
+            # ClickHouse/chdb S3 configuration for local MinIO
+            S3_USE_SSL: 'false'
         depends_on:
             - db
             - redis
