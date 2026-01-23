@@ -7,6 +7,7 @@ from uuid import UUID
 
 from django.db import models
 from django.db.models import Q
+from django.conf import settings
 
 import chdb
 import structlog
@@ -174,12 +175,17 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
         safe_expose_ch_error: bool = True,
     ) -> DataWarehouseTableColumns:
         placeholder_context = HogQLContext(team_id=self.team.pk)
+        # For DeltaS3Wrapper tables, use Delta format to get schema via deltaLake()
+        # EXCEPT for local setups where deltaLake() doesn't support custom endpoints
+        if self.format == "DeltaS3Wrapper" and not settings.USE_LOCAL_SETUP:
+            format_to_use = "Delta"
+        else:
+            format_to_use = self.format
+            
         s3_table_func = build_function_call(
             url=self.url_pattern,
             queryable_folder=self.queryable_folder,
-            format="Delta"  # Use deltaLake() to get table schema for evolved tables
-            if self.format == "DeltaS3Wrapper"
-            else self.format,
+            format=format_to_use,
             access_key=self.credential.access_key if self.credential else None,
             access_secret=self.credential.access_secret if self.credential else None,
             context=placeholder_context,
