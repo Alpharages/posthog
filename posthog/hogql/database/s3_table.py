@@ -89,7 +89,9 @@ def build_function_call(
         return return_expr(expr)
 
     # Delta format
-    if format == "Delta":
+    # Note: deltaLake() function doesn't support custom S3 endpoints (e.g., MinIO)
+    # For local setups, we skip this and fall through to use the s3() function instead
+    if format == "Delta" and not settings.USE_LOCAL_SETUP:
         escaped_url = add_param(url)
         if structure:
             escaped_structure = add_param(structure, False)

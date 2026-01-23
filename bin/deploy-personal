@@ -220,6 +220,12 @@ cat > compose/temporal-django-worker <<EOF
 EOF
 chmod +x compose/temporal-django-worker
 
+cat > compose/temporal-worker <<EOF
+#!/bin/bash
+./bin/temporal-django-worker
+EOF
+chmod +x compose/temporal-worker
+
 # write wait script
 cat > compose/wait <<EOF
 #!/usr/bin/env python3

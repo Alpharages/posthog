@@ -429,6 +429,7 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
         return clickhouse_type
 
     def _safe_expose_ch_error(self, err):
+        logger = structlog.get_logger(__name__)
         err = wrap_query_error(err)
         for key, value in ExtractErrors.items():
             if key in err.message:
@@ -437,7 +438,9 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
         if isinstance(err, CHQueryErrorTooManySimultaneousQueries):
             raise err
 
-        raise Exception("Could not get columns")
+        # Log the actual ClickHouse error for debugging
+        logger.error("ClickHouse error in get_columns", error=str(err), error_message=getattr(err, 'message', str(err)))
+        raise Exception(f"Could not get columns: {getattr(err, 'message', str(err))}")
 
 
 @database_sync_to_async
