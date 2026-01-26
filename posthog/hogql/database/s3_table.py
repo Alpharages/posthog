@@ -88,10 +88,16 @@ def build_function_call(
 
         return return_expr(expr)
 
+    is_minio = "objectstorage" in url or "minio" in url or "localhost" in url or "127.0.0.1" in url
+
+    # Force HTTP for MinIO/Local to avoid SSL errors
+    if is_minio and url.startswith("https://"):
+        url = url.replace("https://", "http://", 1)
+
     # Delta format
     # Note: deltaLake() function doesn't support custom S3 endpoints (e.g., MinIO)
     # For local setups, we skip this and fall through to use the s3() function instead
-    if format == "Delta" and not settings.USE_LOCAL_SETUP and not url.startswith("http://"):
+    if format == "Delta" and not settings.USE_LOCAL_SETUP and not is_minio:
         escaped_url = add_param(url)
         if structure:
             escaped_structure = add_param(structure, False)
