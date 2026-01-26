@@ -17,13 +17,6 @@ services:
         volumes:
             - postgres-data:/var/lib/postgresql/data
 
-    redis:
-        extends:
-            file: docker-compose.base.yml
-            service: redis
-        volumes:
-            - redis-data:/data
-
     redis7:
         extends:
             file: docker-compose.base.yml
@@ -98,7 +91,7 @@ services:
         depends_on:
             db:
                 condition: service_healthy
-            redis:
+            redis7:
                 condition: service_healthy
             clickhouse:
                 condition: service_started
@@ -138,7 +131,7 @@ services:
             OPT_OUT_CAPTURE: ${OPT_OUT_CAPTURE:-false}
         depends_on:
             - db
-            - redis
+            - redis7
             - clickhouse
             - kafka
             - objectstorage
@@ -177,7 +170,6 @@ services:
             OTEL_EXPORTER_OTLP_ENDPOINT: ''
         depends_on:
             - db
-            - redis
             - redis7
             - clickhouse
             - kafka
@@ -287,7 +279,7 @@ services:
             SECRET_KEY: $POSTHOG_SECRET
         depends_on:
             - db
-            - redis
+            - redis7
             - clickhouse
             - kafka
             - objectstorage
@@ -307,8 +299,8 @@ services:
             SITE_URL: https://$DOMAIN
             SECRET_KEY: $POSTHOG_SECRET
             TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
-            REDIS_URL: 'redis://redis:6379/'
-            DATA_WAREHOUSE_REDIS_HOST: 'redis'
+            REDIS_URL: 'redis://redis7:6379/'
+            DATA_WAREHOUSE_REDIS_HOST: 'redis7'
             DATA_WAREHOUSE_REDIS_PORT: '6379'
             OBJECT_STORAGE_ACCESS_KEY_ID: 'object_storage_root_user'
             OBJECT_STORAGE_SECRET_ACCESS_KEY: 'object_storage_root_password'
@@ -327,7 +319,7 @@ services:
             S3_USE_SSL: 'false'
         depends_on:
             - db
-            - redis
+            - redis7
             - clickhouse
             - kafka
             - objectstorage
@@ -347,8 +339,8 @@ services:
             SITE_URL: https://$DOMAIN
             SECRET_KEY: $POSTHOG_SECRET
             TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
-            REDIS_URL: 'redis://redis:6379/'
-            DATA_WAREHOUSE_REDIS_HOST: 'redis'
+            REDIS_URL: 'redis://redis7:6379/'
+            DATA_WAREHOUSE_REDIS_HOST: 'redis7'
             DATA_WAREHOUSE_REDIS_PORT: '6379'
             OBJECT_STORAGE_ACCESS_KEY_ID: 'object_storage_root_user'
             OBJECT_STORAGE_SECRET_ACCESS_KEY: 'object_storage_root_password'
@@ -367,7 +359,7 @@ services:
             S3_USE_SSL: 'false'
         depends_on:
             - db
-            - redis
+            - redis7
             - clickhouse
             - kafka
             - objectstorage
@@ -387,8 +379,8 @@ services:
             SITE_URL: https://$DOMAIN
             SECRET_KEY: $POSTHOG_SECRET
             TEMPORAL_HOST: ${TEMPORAL_HOST:-temporal}
-            REDIS_URL: 'redis://redis:6379/'
-            DATA_WAREHOUSE_REDIS_HOST: 'redis'
+            REDIS_URL: 'redis://redis7:6379/'
+            DATA_WAREHOUSE_REDIS_HOST: 'redis7'
             DATA_WAREHOUSE_REDIS_PORT: '6379'
             OBJECT_STORAGE_ACCESS_KEY_ID: 'object_storage_root_user'
             OBJECT_STORAGE_SECRET_ACCESS_KEY: 'object_storage_root_password'
@@ -407,7 +399,7 @@ services:
             S3_USE_SSL: 'false'
         depends_on:
             - db
-            - redis
+            - redis7
             - clickhouse
             - kafka
             - objectstorage
@@ -477,7 +469,7 @@ services:
             KAFKA_TLS: 'false'
         depends_on:
             - db
-            - redis
+            - redis7
 
     kafka-init:
         image: docker.redpanda.com/redpandadata/redpanda:v25.1.9
@@ -547,7 +539,7 @@ services:
             DATABASE_URL: 'postgres://posthog:posthog@db:5432/posthog'
             PERSONS_URL: 'postgres://posthog:posthog@db:5432/posthog'
             MAXMIND_DB_PATH: '/share/GeoLite2-City.mmdb'
-            REDIS_URL: 'redis://redis:6379/'
+            REDIS_URL: 'redis://redis7:6379/'
             ISSUE_BUCKETS_REDIS_URL: 'redis://redis7:6379/'
             RUST_LOG: 'info'
         depends_on:
@@ -557,7 +549,7 @@ services:
                 condition: service_healthy
             db:
                 condition: service_healthy
-            redis:
+            redis7:
                 condition: service_healthy
 
 volumes:
@@ -570,7 +562,6 @@ volumes:
     clickhouse-data:
     caddy-data:
     caddy-config:
-    redis-data:
     redis7-data:
     kafka-data:
     redpanda-data:
