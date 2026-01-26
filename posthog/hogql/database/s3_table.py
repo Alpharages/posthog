@@ -45,8 +45,12 @@ def build_function_call(
     url_lower = url.lower()
     is_minio = "objectstorage" in url_lower or "minio" in url_lower or "localhost" in url_lower or "127.0.0.1" in url_lower
 
+    ssl_disabled = getattr(settings, "S3_USE_SSL", None) == False or getattr(settings, "S3_USE_SSL", None) == "false"
+    
+    print(f"DEBUG_S3_TABLE_WRAPPER: url={url}, is_minio={is_minio}, ssl_disabled={ssl_disabled}")
+
     # Force HTTP for MinIO/Local to avoid SSL errors
-    if is_minio and url_lower.startswith("https://"):
+    if (is_minio or ssl_disabled) and url_lower.startswith("https://"):
         url = "http://" + url[8:]
 
     raw_params: dict[str, str] = {}
@@ -98,8 +102,12 @@ def build_function_call(
     url_lower = url.lower()
     is_minio = "objectstorage" in url_lower or "minio" in url_lower or "localhost" in url_lower or "127.0.0.1" in url_lower
 
+    ssl_disabled = getattr(settings, "S3_USE_SSL", None) == False or getattr(settings, "S3_USE_SSL", None) == "false"
+    
+    print(f"DEBUG_S3_TABLE: url={url}, is_minio={is_minio}, ssl_disabled={ssl_disabled}")
+
     # Force HTTP for MinIO/Local to avoid SSL errors
-    if is_minio and url_lower.startswith("https://"):
+    if (is_minio or ssl_disabled) and url_lower.startswith("https://"):
         url = "http://" + url[8:]
 
     # Delta format
