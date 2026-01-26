@@ -91,7 +91,7 @@ def build_function_call(
     # Delta format
     # Note: deltaLake() function doesn't support custom S3 endpoints (e.g., MinIO)
     # For local setups, we skip this and fall through to use the s3() function instead
-    if format == "Delta" and not settings.USE_LOCAL_SETUP:
+    if format == "Delta" and not settings.USE_LOCAL_SETUP and not url.startswith("http://"):
         escaped_url = add_param(url)
         if structure:
             escaped_structure = add_param(structure, False)
