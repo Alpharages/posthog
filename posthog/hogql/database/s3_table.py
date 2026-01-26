@@ -42,6 +42,12 @@ def build_function_call(
         url = new_url + queryable_folder + "/**.parquet"
         format = "Parquet"
 
+    is_minio = "objectstorage" in url or "minio" in url or "localhost" in url or "127.0.0.1" in url
+
+    # Force HTTP for MinIO/Local to avoid SSL errors
+    if is_minio and url.startswith("https://"):
+        url = url.replace("https://", "http://", 1)
+
     raw_params: dict[str, str] = {}
 
     def add_param(value: str, is_sensitive: bool = True) -> str:
