@@ -178,8 +178,15 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
         placeholder_context = HogQLContext(team_id=self.team.pk)
         # For DeltaS3Wrapper tables, use Delta format to get schema via deltaLake()
         # EXCEPT for local setups where deltaLake() doesn't support custom endpoints
-        if self.format == "DeltaS3Wrapper" and not settings.USE_LOCAL_SETUP:
+        # For DeltaS3Wrapper tables, use Delta format to get schema via deltaLake()
+        # EXCEPT for local setups where deltaLake() doesn't support custom endpoints
+        # AND for MinIO setups masquerading as production
+        is_minio = "objectstorage" in self.url_pattern or "minio" in self.url_pattern or "localhost" in self.url_pattern or "127.0.0.1" in self.url_pattern
+        
+        if self.format == "DeltaS3Wrapper" and not settings.USE_LOCAL_SETUP and not is_minio:
             format_to_use = "Delta"
+        elif self.format == "Delta" and is_minio:
+             format_to_use = "DeltaS3Wrapper"
         else:
             format_to_use = self.format
             
