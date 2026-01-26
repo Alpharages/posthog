@@ -169,3 +169,22 @@ STR_TO_HOGQL_MAPPING = {
     "StringJSONDatabaseField": StringJSONDatabaseField,
     "UnknownDatabaseField": UnknownDatabaseField,
 }
+
+
+def get_s3_url_pattern(bucket_domain: str, path: str) -> str:
+    """
+    Returns a properly formatted S3 URL, handling HTTP vs HTTPS logic.
+    """
+    from django.conf import settings
+
+    # In local setup or if using a recognizable non-secure domain/port, use http
+    if settings.USE_LOCAL_SETUP or any(x in bucket_domain for x in ["objectstorage", "minio", "localhost", "127.0.0.1"]):
+        protocol = "http"
+    else:
+        protocol = "https"
+
+    # Ensure path doesn't start with / if we're appending it
+    if path.startswith("/"):
+        path = path[1:]
+
+    return f"{protocol}://{bucket_domain}/{path}"

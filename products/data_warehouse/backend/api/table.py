@@ -25,6 +25,7 @@ from products.data_warehouse.backend.models.table import (
     CLICKHOUSE_HOGQL_MAPPING,
     SERIALIZED_FIELD_TO_CLICKHOUSE_MAPPING,
 )
+from products.data_warehouse.backend.models.util import get_s3_url_pattern
 
 
 class CredentialSerializer(serializers.ModelSerializer):
@@ -354,7 +355,8 @@ class TableViewSet(TeamAndOrgViewSetMixin, viewsets.ModelViewSet):
                 s3.upload_fileobj(file, settings.DATAWAREHOUSE_BUCKET, f"managed/team_{team_id}/{file.name}")
 
                 # Set the URL pattern for the table
-                table.url_pattern = f"https://{settings.DATAWAREHOUSE_BUCKET_DOMAIN}/managed/team_{team_id}/{file.name}"
+                path = f"managed/team_{team_id}/{file.name}"
+                table.url_pattern = get_s3_url_pattern(settings.DATAWAREHOUSE_BUCKET_DOMAIN, path)
                 table.format = file_format
 
                 # Try to determine columns from the file

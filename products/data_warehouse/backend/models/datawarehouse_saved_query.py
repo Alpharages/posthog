@@ -27,6 +27,7 @@ from products.data_warehouse.backend.models.util import (
     STR_TO_HOGQL_MAPPING,
     clean_type,
     remove_named_tuples,
+    get_s3_url_pattern,
 )
 
 logger = structlog.get_logger(__name__)
@@ -266,9 +267,11 @@ class DataWarehouseSavedQuery(CreatedMetaFields, UUIDTModel, DeletedMetaFields):
             parsed = urlparse(settings.BUCKET_URL)
             bucket_name = parsed.netloc
 
-            return f"http://{settings.DATAWAREHOUSE_BUCKET_DOMAIN}/{bucket_name}/team_{self.team.pk}_model_{self.id.hex}/modeling/{self.normalized_name}"
+            path = f"{bucket_name}/team_{self.team.pk}_model_{self.id.hex}/modeling/{self.normalized_name}"
+            return get_s3_url_pattern(settings.DATAWAREHOUSE_BUCKET_DOMAIN, path)
 
-        return f"https://{settings.DATAWAREHOUSE_BUCKET_DOMAIN}/dlt/team_{self.team.pk}_model_{self.id.hex}/modeling/{self.normalized_name}"
+        path = f"dlt/team_{self.team.pk}_model_{self.id.hex}/modeling/{self.normalized_name}"
+        return get_s3_url_pattern(settings.DATAWAREHOUSE_BUCKET_DOMAIN, path)
 
     def hogql_definition(
         self, modifiers: Optional[HogQLQueryModifiers] = None
