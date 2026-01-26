@@ -178,7 +178,7 @@ def get_s3_url_pattern(bucket_domain: str, path: str) -> str:
     from django.conf import settings
 
     # In local setup or if using a recognizable non-secure domain/port, use http
-    if settings.USE_LOCAL_SETUP or any(x in bucket_domain for x in ["objectstorage", "minio", "localhost", "127.0.0.1"]):
+    if settings.USE_LOCAL_SETUP or any(x in bucket_domain.lower() for x in ["objectstorage", "minio", "localhost", "127.0.0.1"]):
         protocol = "http"
     else:
         protocol = "https"

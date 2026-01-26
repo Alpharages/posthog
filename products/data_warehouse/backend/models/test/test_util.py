@@ -43,3 +43,15 @@ class TestDataWarehouseUtil(TestCase):
         
         with override_settings(USE_LOCAL_SETUP=False):
             self.assertEqual(get_s3_url_pattern(domain, path), expected)
+
+    def test_get_s3_url_pattern_case_insensitive(self):
+        """Test that domain keyword detection is case-insensitive"""
+        test_cases = [
+            ("ObjectStorage:19000", "http://ObjectStorage:19000/bucket/data"),
+            ("MiNiO:9000", "http://MiNiO:9000/bucket/data"),
+        ]
+        
+        path = "bucket/data"
+        with override_settings(USE_LOCAL_SETUP=False):
+            for domain, expected in test_cases:
+                self.assertEqual(get_s3_url_pattern(domain, path), expected)

@@ -181,7 +181,8 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
         # For DeltaS3Wrapper tables, use Delta format to get schema via deltaLake()
         # EXCEPT for local setups where deltaLake() doesn't support custom endpoints
         # AND for MinIO setups masquerading as production
-        is_minio = "objectstorage" in self.url_pattern or "minio" in self.url_pattern or "localhost" in self.url_pattern or "127.0.0.1" in self.url_pattern
+        url_lower = self.url_pattern.lower()
+        is_minio = "objectstorage" in url_lower or "minio" in url_lower or "localhost" in url_lower or "127.0.0.1" in url_lower
         
         if self.format == "DeltaS3Wrapper" and not settings.USE_LOCAL_SETUP and not is_minio:
             format_to_use = "Delta"

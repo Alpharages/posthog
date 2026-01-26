@@ -42,11 +42,12 @@ def build_function_call(
         url = new_url + queryable_folder + "/**.parquet"
         format = "Parquet"
 
-    is_minio = "objectstorage" in url or "minio" in url or "localhost" in url or "127.0.0.1" in url
+    url_lower = url.lower()
+    is_minio = "objectstorage" in url_lower or "minio" in url_lower or "localhost" in url_lower or "127.0.0.1" in url_lower
 
     # Force HTTP for MinIO/Local to avoid SSL errors
-    if is_minio and url.startswith("https://"):
-        url = url.replace("https://", "http://", 1)
+    if is_minio and url_lower.startswith("https://"):
+        url = "http://" + url[8:]
 
     raw_params: dict[str, str] = {}
 
@@ -94,11 +95,12 @@ def build_function_call(
 
         return return_expr(expr)
 
-    is_minio = "objectstorage" in url or "minio" in url or "localhost" in url or "127.0.0.1" in url
+    url_lower = url.lower()
+    is_minio = "objectstorage" in url_lower or "minio" in url_lower or "localhost" in url_lower or "127.0.0.1" in url_lower
 
     # Force HTTP for MinIO/Local to avoid SSL errors
-    if is_minio and url.startswith("https://"):
-        url = url.replace("https://", "http://", 1)
+    if is_minio and url_lower.startswith("https://"):
+        url = "http://" + url[8:]
 
     # Delta format
     # Note: deltaLake() function doesn't support custom S3 endpoints (e.g., MinIO)
