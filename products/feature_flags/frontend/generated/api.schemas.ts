@@ -77,10 +77,11 @@ export interface UserBasicApi {
  * `web_experiments` - web_experiments
  * `product_tours` - product_tours
  */
-export type CreationContextEnumApi = (typeof CreationContextEnumApi)[keyof typeof CreationContextEnumApi]
+export type FeatureFlagCreationContextEnumApi =
+    (typeof FeatureFlagCreationContextEnumApi)[keyof typeof FeatureFlagCreationContextEnumApi]
 
 // eslint-disable-next-line @typescript-eslint/no-redeclare
-export const CreationContextEnumApi = {
+export const FeatureFlagCreationContextEnumApi = {
     feature_flags: 'feature_flags',
     experiments: 'experiments',
     surveys: 'surveys',
@@ -122,7 +123,7 @@ export type FeatureFlagApiSurveys = { [key: string]: unknown }
 export type FeatureFlagApiFeatures = { [key: string]: unknown }
 
 /**
- * Serializer mixin that resolves appropriate response for tags depending on license.
+ * Serializer mixin that handles tags for objects.
  */
 export interface FeatureFlagApi {
     readonly id: number
@@ -167,7 +168,7 @@ export interface FeatureFlagApi {
 * `early_access_features` - early_access_features
 * `web_experiments` - web_experiments
 * `product_tours` - product_tours */
-    creation_context?: CreationContextEnumApi
+    creation_context?: FeatureFlagCreationContextEnumApi
     /** @nullable */
     is_remote_configuration?: boolean | null
     /** @nullable */
@@ -209,7 +210,7 @@ export type PatchedFeatureFlagApiSurveys = { [key: string]: unknown }
 export type PatchedFeatureFlagApiFeatures = { [key: string]: unknown }
 
 /**
- * Serializer mixin that resolves appropriate response for tags depending on license.
+ * Serializer mixin that handles tags for objects.
  */
 export interface PatchedFeatureFlagApi {
     readonly id?: number
@@ -254,7 +255,7 @@ export interface PatchedFeatureFlagApi {
 * `early_access_features` - early_access_features
 * `web_experiments` - web_experiments
 * `product_tours` - product_tours */
-    creation_context?: CreationContextEnumApi
+    creation_context?: FeatureFlagCreationContextEnumApi
     /** @nullable */
     is_remote_configuration?: boolean | null
     /** @nullable */
