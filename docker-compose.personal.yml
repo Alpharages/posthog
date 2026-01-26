@@ -295,6 +295,8 @@ services:
             context: .
             dockerfile: Dockerfile
         image: $REGISTRY_URL:$POSTHOG_APP_TAG
+        volumes:
+        - .:/code
         environment:
             SITE_URL: https://$DOMAIN
             SECRET_KEY: $POSTHOG_SECRET
