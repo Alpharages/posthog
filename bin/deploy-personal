@@ -99,15 +99,6 @@ echo "Ok! We'll take it from here 🚀"
 echo "Making sure any stack that might exist is stopped"
 sudo -E docker-compose -f docker-compose.yml stop &> /dev/null || true
 
-# send log of this install for continued support!
-curl -o /dev/null -L --header "Content-Type: application/json" -d "{
-    \"api_key\": \"sTMFPsFhdP1Ssg\",
-    \"distinct_id\": \"${DOMAIN}\",
-    \"properties\": {\"domain\": \"${DOMAIN}\"},
-    \"type\": \"capture\",
-    \"event\": \"magic_curl_install_start\"
-}" https://us.i.posthog.com/batch/ &> /dev/null
-
 # update apt cache
 echo "Grabbing latest apt caches"
 sudo apt update
@@ -182,7 +173,7 @@ if [ ! -f ./share/GeoLite2-City.mmdb ]; then
             sudo apt-get install -y --no-install-recommends curl ca-certificates brotli
         fi
     fi
-    
+
     # Download and decompress
     if command -v brotli &> /dev/null; then
         curl -L 'https://mmdbcdn.posthog.net/' --http1.1 | brotli --decompress --output=./share/GeoLite2-City.mmdb
@@ -190,7 +181,7 @@ if [ ! -f ./share/GeoLite2-City.mmdb ]; then
         echo "⚠️  Warning: brotli not found. Skipping GeoIP database download."
         echo "    You may need to download it manually later."
     fi
-    
+
     if [ -f ./share/GeoLite2-City.mmdb ]; then
         echo '{"date": "'"$(date +%Y-%m-%d)"'"}' > ./share/GeoLite2-City.json
         chmod 644 ./share/GeoLite2-City.mmdb
@@ -220,11 +211,7 @@ cat > compose/temporal-django-worker <<EOF
 EOF
 chmod +x compose/temporal-django-worker
 
-cat > compose/temporal-worker <<EOF
-#!/bin/bash
-./bin/temporal-django-worker
-EOF
-chmod +x compose/temporal-worker
+
 
 # write wait script
 cat > compose/wait <<EOF
@@ -302,7 +289,7 @@ if [ -z "$SKIP_HEALTH_CHECK" ]; then
     echo ""
     echo "⏳ Waiting for PostHog web to boot (this will take a few minutes)"
     echo "   (timeout after 10 minutes if app doesn't start)"
-    
+
     # Wait for health check with 600 second timeout
     # Track the start time to measure actual wait time
     HEALTH_START=$(date +%s)
@@ -313,14 +300,6 @@ if [ -z "$SKIP_HEALTH_CHECK" ]; then
         echo "⌛️ PostHog looks up! (after ${HEALTH_DURATION} seconds)"
         echo ""
         echo "🎉🎉🎉  Done! 🎉🎉🎉"
-        # send log of this install for continued support!
-        curl -o /dev/null -L --header "Content-Type: application/json" -d "{
-            \"api_key\": \"sTMFPsFhdP1Ssg\",
-            \"distinct_id\": \"${DOMAIN}\",
-            \"properties\": {\"domain\": \"${DOMAIN}\"},
-            \"type\": \"capture\",
-            \"event\": \"magic_curl_install_complete\"
-        }" https://us.i.posthog.com/batch/ &> /dev/null
     else
         HEALTH_EXIT=$?
         echo ""
