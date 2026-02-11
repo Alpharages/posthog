@@ -13,13 +13,20 @@ from llm_gateway.config import get_settings
 from llm_gateway.metrics.prometheus import (
     ACTIVE_STREAMS,
     CONCURRENT_REQUESTS,
+    LLM_TIME_TO_FIRST_TOKEN,
     PROVIDER_ERRORS,
     REQUEST_COUNT,
     REQUEST_LATENCY,
     STREAMING_CLIENT_DISCONNECT,
 )
 from llm_gateway.observability import capture_exception
-from llm_gateway.request_context import RequestContext, get_request_id, set_auth_user, set_request_context
+from llm_gateway.request_context import (
+    RequestContext,
+    get_request_id,
+    set_auth_user,
+    set_request_context,
+    set_time_to_first_token,
+)
 from llm_gateway.streaming.sse import format_sse_stream
 
 logger = structlog.get_logger(__name__)
@@ -34,6 +41,7 @@ class ProviderConfig:
 ANTHROPIC_CONFIG = ProviderConfig(name="anthropic", endpoint_name="anthropic_messages")
 OPENAI_CONFIG = ProviderConfig(name="openai", endpoint_name="chat_completions")
 OPENAI_RESPONSES_CONFIG = ProviderConfig(name="openai", endpoint_name="responses")
+OPENAI_TRANSCRIPTION_CONFIG = ProviderConfig(name="openai", endpoint_name="audio_transcriptions")
 
 
 async def handle_llm_request(
@@ -125,11 +133,20 @@ async def _handle_streaming_request(
         ACTIVE_STREAMS.labels(provider=provider_config.name, model=model, product=product).inc()
         CONCURRENT_REQUESTS.labels(provider=provider_config.name, model=model, product=product).inc()
         status_code = "200"
+        provider_start = time.monotonic()
+        first_chunk_received = False
 
         try:
             response = await asyncio.wait_for(llm_call(**request_data), timeout=timeout)
 
             async for chunk in format_sse_stream(response):
+                if not first_chunk_received:
+                    first_chunk_received = True
+                    time_to_first = time.monotonic() - provider_start
+                    LLM_TIME_TO_FIRST_TOKEN.labels(provider=provider_config.name, model=model, product=product).observe(
+                        time_to_first
+                    )
+                    set_time_to_first_token(time_to_first)
                 yield chunk
 
         except asyncio.CancelledError:

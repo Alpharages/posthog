@@ -104,7 +104,10 @@ def resolve_dependency_to_node(
     return node
 
 
-def sync_saved_query_to_dag(saved_query: "DataWarehouseSavedQuery") -> Node | None:
+def sync_saved_query_to_dag(
+    saved_query: "DataWarehouseSavedQuery",
+    extra_properties: dict | None = None,  # TODO(andrew): remove this after backfill
+) -> Node | None:
     """
     Create or update Node and Edges for a SavedQuery.
 
@@ -114,27 +117,26 @@ def sync_saved_query_to_dag(saved_query: "DataWarehouseSavedQuery") -> Node | No
     4. Delete existing incoming edges (dependencies may have changed)
     5. Create new edges, catching cycle errors and creating conflict edges
 
+    Args:
+        saved_query: The SavedQuery to sync to the DAG
+        extra_properties: Optional dict of properties to merge into created nodes and edges
+
     Returns the Node for the SavedQuery, or None if query parsing fails.
     """
+    extra_properties = extra_properties or {}
     team = saved_query.team
     dag_id = get_dag_id(team.id)
-    # parse query first - if this fails, we don't create/update the node
-    query = saved_query.query.get("query") if saved_query.query else None
-    if not query:
+    model_query = saved_query.query.get("query") if saved_query.query else None
+    if not model_query:
         raise ValueError(f"DataWarehouseSavedQuery has no query: saved_query_id={saved_query.id}")
-    try:
-        dependencies = get_parents_from_model_query(query)
-    except Exception as e:
-        logger.warning("Failed to parse query for dependencies", saved_query_id=str(saved_query.id), error=str(e))
-        capture_exception(e)
-        return None
+
     # determine node type based on materialization status (fk to datawarehouse table)
     node_type = NodeType.MAT_VIEW if saved_query.table else NodeType.VIEW
     target, _ = Node.objects.get_or_create(
         team=team,
         saved_query=saved_query,
         dag_id=dag_id,
-        defaults={"name": saved_query.name, "type": node_type},
+        defaults={"name": saved_query.name, "type": node_type, "properties": extra_properties},
     )
     # update type (name is automatically synced from saved_query in Node.save())
     target.type = node_type
@@ -142,6 +144,56 @@ def sync_saved_query_to_dag(saved_query: "DataWarehouseSavedQuery") -> Node | No
     database = Database.create_for(team=team)
     # clear previous incoming edges, dependencies may have changed
     Edge.objects.filter(team=team, target=target).delete()
+
+    # parse query to extract dependencies
+    try:
+        model_name = saved_query.name
+        dependencies = get_parents_from_model_query(team, model_name, model_query)
+    except QueryError as e:
+        error_message = str(e)
+        # handle circular dependency as a conflict edge
+        if "circular dependency detected" in error_message.lower():
+            logger.warning(
+                "Cycle detected when parsing query",
+                saved_query_id=saved_query.id,
+                saved_query=saved_query.name,
+                error=error_message,
+            )
+            conflict_dag_id = get_conflict_dag_id(team.id)
+            # update the node to use conflict dag_id and store error info
+            target.dag_id = conflict_dag_id
+            target.properties = {
+                **target.properties,
+                **extra_properties,
+                "error_type": "cycle",
+                "error_message": error_message,
+                "original_dag_id": dag_id,
+                "detected_at": timezone.now().isoformat(),
+            }
+            target.save()
+            # create conflict edge
+            Edge(
+                team=team,
+                dag_id=conflict_dag_id,
+                source=target,
+                target=target,
+                properties={
+                    **extra_properties,
+                    "error_type": "cycle",
+                    "error_message": error_message,
+                    "original_dag_id": dag_id,
+                    "detected_at": timezone.now().isoformat(),
+                },
+            ).save(skip_validation=True)
+            return target
+        # other query errors should surface to the user
+        target.delete()
+        raise
+    except Exception as e:
+        target.delete()
+        logger.warning("Failed to parse query for dependencies", saved_query_id=str(saved_query.id), error=str(e))
+        capture_exception(e)
+        return None
 
     unresolved = []
     for dependency_name in dependencies:
@@ -153,6 +205,7 @@ def sync_saved_query_to_dag(saved_query: "DataWarehouseSavedQuery") -> Node | No
                     dag_id=dag_id,
                     source=source,
                     target=target,
+                    properties=extra_properties,
                 )
             # dag mismatch error can't happen because we control the only dag id for now
             except CycleDetectionError as e:
@@ -169,6 +222,7 @@ def sync_saved_query_to_dag(saved_query: "DataWarehouseSavedQuery") -> Node | No
                     source=source,
                     target=target,
                     properties={
+                        **extra_properties,
                         "error_type": "cycle",
                         "error_message": str(e),
                         "original_dag_id": dag_id,
@@ -188,6 +242,7 @@ def sync_saved_query_to_dag(saved_query: "DataWarehouseSavedQuery") -> Node | No
                     "detected_at": timezone.now().isoformat(),
                 }
             )
+    # already includes extra properties from above
     target.properties = {**target.properties, "unresolved_dependencies": unresolved}
     # name is included in update_fields because Node.save() auto-syncs it from saved_query
     target.save(update_fields=["name", "type", "properties"])
