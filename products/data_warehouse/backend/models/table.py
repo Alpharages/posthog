@@ -25,7 +25,7 @@ from posthog.hogql.escape_sql import escape_clickhouse_identifier
 
 from posthog.clickhouse.client import sync_execute
 from posthog.clickhouse.query_tagging import Product, tag_queries
-from posthog.errors import CHQueryErrorTooManySimultaneousQueries, wrap_query_error
+from posthog.errors import CHQueryErrorTooManySimultaneousQueries, wrap_clickhouse_query_error
 from posthog.exceptions_capture import capture_exception
 from posthog.models.utils import CreatedMetaFields, DeletedMetaFields, UpdatedMetaFields, UUIDTModel, sane_repr
 from posthog.settings import TEST
@@ -163,7 +163,11 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
                 select_from=ast.JoinExpr(table=ast.Field(chain=[self.name])),
             )
 
-            execute_hogql_query(query, self.team, modifiers=HogQLQueryModifiers(s3TableUseInvalidColumns=True))
+            execute_hogql_query(
+                query,
+                self.team,
+                modifiers=HogQLQueryModifiers(s3TableUseInvalidColumns=True),
+            )
             return True
         except:
             return False
@@ -183,14 +187,14 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
         # AND for MinIO setups masquerading as production
         url_lower = self.url_pattern.lower()
         is_minio = "objectstorage" in url_lower or "minio" in url_lower or "localhost" in url_lower or "127.0.0.1" in url_lower
-        
+
         if self.format == "DeltaS3Wrapper" and not settings.USE_LOCAL_SETUP and not is_minio:
             format_to_use = "Delta"
         elif self.format == "Delta" and is_minio:
              format_to_use = "DeltaS3Wrapper"
         else:
             format_to_use = self.format
-            
+
         s3_table_func = build_function_call(
             url=self.url_pattern,
             queryable_folder=self.queryable_folder,
@@ -444,8 +448,7 @@ class DataWarehouseTable(CreatedMetaFields, UpdatedMetaFields, UUIDTModel, Delet
         return clickhouse_type
 
     def _safe_expose_ch_error(self, err):
-        logger = structlog.get_logger(__name__)
-        err = wrap_query_error(err)
+        err = wrap_clickhouse_query_error(err)
         for key, value in ExtractErrors.items():
             if key in err.message:
                 raise Exception(value)

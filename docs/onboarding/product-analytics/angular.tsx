@@ -1,7 +1,10 @@
-import { useMDXComponents } from 'scenes/onboarding/OnboardingDocsContentWrapper'
+import { OnboardingComponentsContext, createInstallation } from 'scenes/onboarding/OnboardingDocsContentWrapper'
+
 import { StepDefinition } from '../steps'
 
-export const getAngularSteps = (CodeBlock: any, Markdown: any, dedent: any, snippets: any): StepDefinition[] => {
+export const getAngularSteps = (ctx: OnboardingComponentsContext): StepDefinition[] => {
+    const { CodeBlock, Markdown, dedent, snippets } = ctx
+
     const JSEventCapture = snippets?.JSEventCapture
 
     return [
@@ -62,7 +65,7 @@ export const getAngularSteps = (CodeBlock: any, Markdown: any, dedent: any, snip
                                       '<ph_project_api_key>',
                                       {
                                         api_host: '<ph_client_api_host>',
-                                        defaults: '2025-11-30'
+                                        defaults: '2026-01-30'
                                       }
                                     )
 
@@ -82,17 +85,4 @@ export const getAngularSteps = (CodeBlock: any, Markdown: any, dedent: any, snip
     ]
 }
 
-export const AngularInstallation = (): JSX.Element => {
-    const { Steps, Step, CodeBlock, Markdown, dedent, snippets } = useMDXComponents()
-    const steps = getAngularSteps(CodeBlock, Markdown, dedent, snippets)
-
-    return (
-        <Steps>
-            {steps.map((step, index) => (
-                <Step key={index} title={step.title} badge={step.badge}>
-                    {step.content}
-                </Step>
-            ))}
-        </Steps>
-    )
-}
+export const AngularInstallation = createInstallation(getAngularSteps)

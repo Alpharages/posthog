@@ -246,13 +246,27 @@ export function InsightMeta({
             moreButtons={
                 <>
                     {/* Insight related */}
+                    {canViewInsight && (
+                        <LemonButton
+                            to={urls.insightView(
+                                short_id,
+                                dashboardId,
+                                variablesOverride,
+                                filtersOverride,
+                                tile?.filters_overrides
+                            )}
+                            fullWidth
+                        >
+                            View
+                        </LemonButton>
+                    )}
                     {canEditInsight && (
                         <>
                             <LemonButton
                                 to={
                                     isDataVisualizationNode(insight.query)
-                                        ? urls.sqlEditor(undefined, undefined, short_id)
-                                        : urls.insightEdit(short_id)
+                                        ? urls.sqlEditor({ insightShortId: short_id })
+                                        : urls.insightEdit(short_id, dashboardId)
                                 }
                                 fullWidth
                                 {...getOverrideWarningPropsForButton(filtersOverride, variablesOverride)}
