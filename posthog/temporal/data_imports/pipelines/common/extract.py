@@ -43,7 +43,7 @@ def build_non_retryable_errors_redis_key(team_id: int, source_id: str, run_id: s
     return f"posthog:data_warehouse:non_retryable_errors:{team_id}:{source_id}:{run_id}"
 
 
-def trim_source_job_inputs(source: "ExternalDataSource") -> None:
+async def trim_source_job_inputs(source: "ExternalDataSource") -> None:
     import json
 
     if not source.job_inputs:

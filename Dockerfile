@@ -24,7 +24,28 @@
 #
 # ---------------------------------------------------------
 #
+FROM debian:bookworm-slim AS fetch-geoip-db
+WORKDIR /code
+SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
+
+# Fetch the GeoLite2-City database that will be used for IP geolocation within Django.
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    "ca-certificates" \
+    "curl" \
+    "brotli" \
+    && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir share && \
+    ( curl -s -L "https://mmdbcdn.posthog.net/" --http1.1 | brotli --decompress --output=./share/GeoLite2-City.mmdb ) && \
+    chmod -R 755 ./share/GeoLite2-City.mmdb
+
+
+#
+# ---------------------------------------------------------
+#
 FROM node:24.13.0-bookworm-slim AS frontend-build
+
 WORKDIR /code
 SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
 
@@ -62,19 +83,19 @@ COPY --from=frontend-build /code/frontend/dist /code/frontend/dist
 
 RUN --mount=type=secret,id=posthog_upload_sourcemaps_cli_api_key \
     ( \
-        if [ -f /run/secrets/posthog_upload_sourcemaps_cli_api_key ]; then \
-            apt-get update && \
-            apt-get install -y --no-install-recommends ca-certificates curl && \
-            curl --proto '=https' --tlsv1.2 -LsSf https://download.posthog.com/cli | sh && \
-            export PATH="/root/.posthog:$PATH" && \
-            export POSTHOG_CLI_TOKEN="$(cat /run/secrets/posthog_upload_sourcemaps_cli_api_key)" && \
-            export POSTHOG_CLI_ENV_ID=2 && \
-            posthog-cli --no-fail sourcemap process \
-                --directory /code/frontend/dist \
-                --public-path-prefix /static \
-                --project posthog \
-                --version "${COMMIT_HASH:-unknown}"; \
-        fi \
+    if [ -f /run/secrets/posthog_upload_sourcemaps_cli_api_key ]; then \
+    apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
+    curl --proto '=https' --tlsv1.2 -LsSf https://download.posthog.com/cli | sh && \
+    export PATH="/root/.posthog:$PATH" && \
+    export POSTHOG_CLI_TOKEN="$(cat /run/secrets/posthog_upload_sourcemaps_cli_api_key)" && \
+    export POSTHOG_CLI_ENV_ID=2 && \
+    posthog-cli --no-fail sourcemap process \
+    --directory /code/frontend/dist \
+    --public-path-prefix /static \
+    --project posthog \
+    --version "${COMMIT_HASH:-unknown}"; \
+    fi \
     ) || true && \
     touch /tmp/.sourcemaps-processed
 
@@ -160,28 +181,17 @@ COPY --from=frontend-build /code/frontend/dist /code/frontend/dist
 COPY --from=frontend-build /code/frontend/src/products.json /code/frontend/src/products.json
 
 # Make sure we build the static files
-RUN SKIP_SERVICE_VERSION_REQUIREMENTS=1 STATIC_COLLECTION=1 DATABASE_URL='postgres:///' REDIS_URL='redis:///' python manage.py collectstatic --noinput
+# Copy the GeoLite2-City database from the fetch-geoip-db stage.
+COPY --from=fetch-geoip-db --chown=posthog:posthog /code/share/GeoLite2-City.mmdb /code/share/GeoLite2-City.mmdb
+
+RUN SKIP_SERVICE_VERSION_REQUIREMENTS=1 STATIC_COLLECTION=1 DATABASE_URL='postgres:///' REDIS_URL='redis:///' AXES_ENABLED=False python manage.py collectstatic --noinput
 
 
 
 #
 # ---------------------------------------------------------
 #
-FROM debian:bookworm-slim AS fetch-geoip-db
-WORKDIR /code
-SHELL ["/bin/bash", "-e", "-o", "pipefail", "-c"]
 
-# Fetch the GeoLite2-City database that will be used for IP geolocation within Django.
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    "ca-certificates" \
-    "curl" \
-    "brotli" \
-    && \
-    rm -rf /var/lib/apt/lists/* && \
-    mkdir share && \
-    ( curl -s -L "https://mmdbcdn.posthog.net/" --http1.1 | brotli --decompress --output=./share/GeoLite2-City.mmdb ) && \
-    chmod -R 755 ./share/GeoLite2-City.mmdb
 
 
 #
@@ -325,9 +335,9 @@ RUN ffmpeg -version
 RUN /python-runtime/bin/python -c "import playwright; print('Playwright package imported successfully')"
 RUN /python-runtime/bin/python -c "from playwright.sync_api import sync_playwright; print('Playwright sync API available')"
 RUN cd /code/nodejs/src/scripts && timeout 60s node -e "\
-  require('puppeteer'); \
-  require('puppeteer-screen-recorder'); \
-  console.log('Puppeteer and screen recorder available')"
+    require('puppeteer'); \
+    require('puppeteer-screen-recorder'); \
+    console.log('Puppeteer and screen recorder available')"
 
 # Setup ENV.
 ENV NODE_ENV=production \

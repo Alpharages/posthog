@@ -633,6 +633,8 @@ class KernelRuntimeService:
         return expressions
 
     def _register_cleanup_hooks(self) -> None:
+        if getattr(settings, "IS_COLLECT_STATIC", False):
+            return
         def _cleanup(*_: Any) -> None:
             self.shutdown_all()
 

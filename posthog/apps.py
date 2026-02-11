@@ -84,7 +84,7 @@ class PostHogConfig(AppConfig):
         from posthog.tasks.hog_functions import queue_sync_hog_function_templates
 
         # Skip during tests since we handle this in conftest.py
-        if not settings.TEST:
+        if not settings.TEST and not settings.IS_COLLECT_STATIC:
             queue_sync_hog_function_templates()
 
         file_system_registrations.register_core_file_system_types()

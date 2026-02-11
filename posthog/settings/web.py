@@ -17,7 +17,10 @@ logger = structlog.get_logger(__name__)
 
 # lockout after too many attempts
 AXES_ENABLED = get_from_env("AXES_ENABLED", not TEST, type_cast=str_to_bool)
-AXES_HANDLER = "axes.handlers.cache.AxesCacheHandler"
+if AXES_ENABLED:
+    AXES_HANDLER = "axes.handlers.cache.AxesCacheHandler"
+else:
+    AXES_HANDLER = "axes.handlers.dummy.AxesDummyHandler"
 AXES_FAILURE_LIMIT = get_from_env("AXES_FAILURE_LIMIT", 30, type_cast=int)
 AXES_COOLOFF_TIME = timedelta(minutes=10)
 AXES_LOCKOUT_CALLABLE = "posthog.api.authentication.axes_locked_out"
