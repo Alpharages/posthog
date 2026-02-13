@@ -157,6 +157,11 @@ services:
             SESSION_RECORDING_V2_S3_ENDPOINT: ${SESSION_RECORDING_V2_S3_ENDPOINT:-$OBJECT_STORAGE_ENDPOINT}
             OBJECT_STORAGE_ENABLED: true
             OBJECT_STORAGE_FORCE_PATH_STYLE: 'true'
+            REDIS_URL: 'redis://redis7:6379/'
+            REDIS_HOST: 'redis7'
+            REDIS_PORT: '6379'
+            SESSION_RECORDING_API_REDIS_HOST: 'redis7'
+            SESSION_RECORDING_API_REDIS_PORT: '6379'
             CDP_REDIS_HOST: redis7
             CDP_REDIS_PORT: 6379
             CDP_REDIS_PASSWORD: ''
@@ -421,7 +426,7 @@ services:
                 BIN: cyclotron-janitor
         restart: on-failure
         environment:
-            DATABASE_URL: ${DATABASE_URL}
+            DATABASE_URL: ${CYCLOTRON_DATABASE_URL}
             KAFKA_HOSTS: 'kafka:9092'
             KAFKA_TOPIC: 'clickhouse_app_metrics2'
         depends_on:
