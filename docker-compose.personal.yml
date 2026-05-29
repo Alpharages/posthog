@@ -84,6 +84,8 @@ services:
             AWS_REGION: 'us-east-1'
             AWS_DEFAULT_REGION: 'us-east-1'
             SES_REGION: 'us-east-1'
+            SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+            SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
         depends_on:
             redis7:
                 condition: service_healthy
@@ -132,6 +134,8 @@ services:
             AWS_REGION: 'us-east-1'
             AWS_DEFAULT_REGION: 'us-east-1'
             SES_REGION: 'us-east-1'
+            SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+            SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
         depends_on:
             - redis7
             - clickhouse
@@ -173,12 +177,18 @@ services:
             DATABASE_URL: ${DATABASE_URL}
             PERSONS_DATABASE_URL: ${DATABASE_URL}
             CYCLOTRON_DATABASE_URL: ${CYCLOTRON_DATABASE_URL}
+            # Route CDP cyclotron jobs through Postgres so hogflow delay steps are honored.
+            # Kafka mode (the code default) ignores scheduled-in-future jobs, collapsing delays.
+            CDP_CYCLOTRON_JOB_QUEUE_CONSUMER_MODE: postgres
+            CDP_CYCLOTRON_JOB_QUEUE_PRODUCER_MAPPING: '*:postgres'
             BEHAVIORAL_COHORTS_DATABASE_URL: ${DATABASE_URL}
             PGSSLMODE: ${PGSSLMODE:-require}
             NODE_TLS_REJECT_UNAUTHORIZED: '0'
             AWS_REGION: 'us-east-1'
             AWS_DEFAULT_REGION: 'us-east-1'
             SES_REGION: 'us-east-1'
+            SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+            SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
             OTEL_EXPORTER_OTLP_ENDPOINT: ''
         volumes:
             - ./share:/share
@@ -290,6 +300,8 @@ services:
             AWS_REGION: 'us-east-1'
             AWS_DEFAULT_REGION: 'us-east-1'
             SES_REGION: 'us-east-1'
+            SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+            SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
         depends_on:
             - clickhouse
             - kafka
@@ -327,6 +339,8 @@ services:
             AWS_REGION: 'us-east-1'
             AWS_DEFAULT_REGION: 'us-east-1'
             SES_REGION: 'us-east-1'
+            SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+            SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
             AWS_ALLOW_HTTP: 'true'
             AWS_EC2_METADATA_DISABLED: 'true'
             S3_USE_SSL: 'false'
@@ -368,6 +382,8 @@ services:
             AWS_REGION: 'us-east-1'
             AWS_DEFAULT_REGION: 'us-east-1'
             SES_REGION: 'us-east-1'
+            SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+            SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
             AWS_ALLOW_HTTP: 'true'
             AWS_EC2_METADATA_DISABLED: 'true'
             S3_USE_SSL: 'false'
@@ -409,6 +425,8 @@ services:
             AWS_REGION: 'us-east-1'
             AWS_DEFAULT_REGION: 'us-east-1'
             SES_REGION: 'us-east-1'
+            SES_ACCESS_KEY_ID: ${SES_ACCESS_KEY_ID}
+            SES_SECRET_ACCESS_KEY: ${SES_SECRET_ACCESS_KEY}
             AWS_ALLOW_HTTP: 'true'
             AWS_EC2_METADATA_DISABLED: 'true'
             S3_USE_SSL: 'false'
@@ -515,7 +533,7 @@ services:
                 echo "Kafka broker is accepting requests, creating topics..."
                 # Create topics needed by rust services
                 # Note: $$ escapes $ for docker-compose variable substitution
-                for topic in exceptions_ingestion clickhouse_events_json; do
+                for topic in exceptions_ingestion clickhouse_events_json clickhouse_logs; do
                     if rpk topic create "$$topic" --brokers kafka:9092 -p 1 -r 1 2>&1; then
                         echo "Topic $$topic created successfully"
                     else
@@ -546,7 +564,7 @@ services:
             OBJECT_STORAGE_BUCKET: 'posthog'
             OBJECT_STORAGE_ACCESS_KEY_ID: ${OBJECT_STORAGE_ACCESS_KEY_ID}
             OBJECT_STORAGE_SECRET_ACCESS_KEY: ${OBJECT_STORAGE_SECRET_ACCESS_KEY}
-            OBJECT_STORAGE_ENDPOINT: 'https://posthog.us-east-1.linodeobjects.com'
+            OBJECT_STORAGE_ENDPOINT: 'https://us-east-1.linodeobjects.com'
             OBJECT_STORAGE_FORCE_PATH_STYLE: 'true'
             BIND_HOST: '0.0.0.0'
             BIND_PORT: '3302'

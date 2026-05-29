@@ -34,7 +34,7 @@ CREATE TABLE default.logs
     INDEX idx_res_attr_value mapValues(resource_attributes) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_log_attr_str_key mapKeys(attributes_map_str) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_log_attr_str_value mapValues(attributes_map_str) TYPE bloom_filter(0.01) GRANULARITY 1,
-    INDEX idx_log_attr_str_value_n3 mapValues(attributes_map_str) TYPE ngrambf_v1(3, 32768, 3, 0) GRANULARITY 1
+    INDEX idx_log_attr_str_value_n3 mapValues(attributes_map_str) TYPE ngrambf_v1(3, 32768, 3, 0) GRANULARITY 1,
     INDEX idx_log_attr_float_key mapKeys(attributes_map_float) TYPE bloom_filter(0.01) GRANULARITY 1,
     INDEX idx_log_attr_float_value mapValues(attributes_map_float) TYPE minmax GRANULARITY 1,
     INDEX idx_log_attr_datetime_key mapKeys(attributes_map_datetime) TYPE bloom_filter(0.01) GRANULARITY 1,
